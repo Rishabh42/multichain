@@ -28,7 +28,8 @@
 #define MC_CCW_DEFAULT_AUTOCOMMIT_DELAY          200
 #define MC_CCW_WORST_RESPONSE_SCORE       1048576000
 #define MC_CCW_DEFAULT_MEMPOOL_SIZE            60000
-#define MC_CCW_MAX_MBS_PER_SECOND                  8
+#define MC_CCW_MAX_KBS_PER_SECOND               8196
+#define MC_CCW_MIN_KBS_PER_SECOND                128
 #define MC_CCW_MAX_DELAY_BETWEEN_COLLECTS       1000
 #define MC_CCW_QUERY_SPLIT                         4
 #define MC_CCW_MAX_ITEMS_PER_CHUNKFOR_CHECK       16
@@ -78,7 +79,7 @@ typedef struct mc_ChunkCollectorDBRow
     
     unsigned char m_Salt[MC_CDB_CHUNK_HASH_SIZE];                               // Salt size should not be large than hash size
     uint32_t m_SaltSize;
-    uint32_t m_Reserved1;
+    uint32_t m_CollectorFlags;
     int64_t m_Reserved2;
     
     void Zero();
@@ -92,7 +93,7 @@ typedef struct mc_ChunkCollectorRow
     unsigned char m_TxID[MC_TDB_TXID_SIZE];                               
     unsigned char m_Salt[MC_CDB_CHUNK_HASH_SIZE];                               
     uint32_t m_SaltSize;
-    uint32_t m_Reserved1;
+    uint32_t m_Flags;
     
     mc_ChunkEntityValue m_State;
     
@@ -133,6 +134,11 @@ typedef struct mc_ChunkCollector
     int m_MaxMemPoolSize;
     int m_TimeoutRequest;
     int m_TimeoutQuery;
+    int m_MaxKBPerDestination;
+    int m_MaxMaxKBPerDestination;
+    int m_MinMaxKBPerDestination;
+    int64_t m_LastKBPerDestinationChangeTimestamp;
+    int m_MaxMBPerSecond;
     int64_t m_TotalChunkSize;
     int64_t m_TotalChunkCount;                                                       
     
@@ -186,7 +192,8 @@ typedef struct mc_ChunkCollector
                  const unsigned char *txid,
                  const int vout,
                  const uint32_t chunk_size,
-                 const uint32_t salt_size);  
+                 const uint32_t salt_size,
+                 const uint32_t flags);  
     
     int InsertChunkInternal(                  
                  const unsigned char *hash,   
@@ -194,12 +201,14 @@ typedef struct mc_ChunkCollector
                  const unsigned char *txid,
                  const int vout,
                  const uint32_t chunk_size,
-                 const uint32_t salt_size);  
+                 const uint32_t salt_size,
+                 const uint32_t flags);  
 
     int MarkAndClear(uint32_t flag, int unmark);    
     int CopyFlags();    
     int FillMarkPoolByHash(const unsigned char *hash);    
     int FillMarkPoolByFlag(uint32_t flag, uint32_t not_flag);    
+    void AdjustKBPerDestination(CNode* pfrom,bool success);
         
     int Commit();                                                      
     int CommitInternal(int fill_mempool); 

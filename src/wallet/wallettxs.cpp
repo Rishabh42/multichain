@@ -25,6 +25,38 @@ bool IsLicenseTokenTransfer(mc_Script *lpScript,mc_Buffer *amounts);
 
 using namespace std;
 
+uint32_t mc_AutosubscribeWalletMode(std::string parameters,bool check_license)
+{
+    uint32_t mode=0;
+    
+    vector<string> inputStrings;
+    stringstream ss(parameters); 
+    string tok;
+    
+    while(getline(ss, tok, ',')) 
+    {
+        inputStrings.push_back(tok);
+    }
+    
+    for(int is=0;is<(int)inputStrings.size();is++)
+    {
+        if(inputStrings[is] == "assets")
+        {
+            mode |= MC_WMD_AUTOSUBSCRIBE_ASSETS;
+        }
+        if(inputStrings[is] == "streams")
+        {
+            mode |= MC_WMD_AUTOSUBSCRIBE_STREAMS;
+        }
+    }
+
+    if(pEF->STR_CheckAutoSubscription(parameters,check_license))
+    {
+            mode |= MC_WMD_AUTOSUBSCRIBE_STREAMS;        
+    }
+    
+    return mode;
+}
 
 void WalletTxNotify(mc_TxImport *imp,const CWalletTx& tx,int block,bool fFound,uint256 block_hash)
 {
@@ -113,6 +145,12 @@ void mc_Coin::Zero()
     m_Block=-1;
     m_Flags=0;    
     m_LockTime=0;
+    m_CSAssets.clear();
+    m_CSDetails.m_Active=false;
+    m_CSDetails.m_CSDestination=CNoDestination();
+    m_CSDetails.m_Required=0;
+    m_CSDetails.m_WithInlineData=false;
+    m_CSDetails.m_IsEmpty=false;
 }
 
 bool mc_Coin::IsFinal() const
@@ -1198,6 +1236,7 @@ int mc_WalletTxs::RollBack(mc_TxImport *import,int block)
                         if (itold == m_UTXOs[import_pos].end())
                         {
                             m_UTXOs[import_pos].insert(make_pair(txouts[i].m_OutPoint, txouts[i]));
+                            pEF->LIC_VerifyUpdateCoin(block,&(txouts[i]),true);
                         }                    
                     }
                 }
@@ -2379,8 +2418,15 @@ int mc_WalletTxs::AddTx(mc_TxImport *import,const CWalletTx& tx,int block,CDiskT
             int chunk_size,chunk_shift;
             size_t chunk_bytes;
             uint32_t salt_size;
+            uint32_t format;
+            uint32_t chunk_flags;
+            chunk_flags=0;
             
-            mc_gState->m_TmpScript->ExtractAndDeleteDataFormat(NULL,&chunk_hashes,&chunk_count,NULL,&salt_size,0);
+            mc_gState->m_TmpScript->ExtractAndDeleteDataFormat(&format,&chunk_hashes,&chunk_count,NULL,&salt_size,0);
+            if(chunk_count == 1)
+            {
+                chunk_flags=MC_CFL_SINGLE_CHUNK + (format & MC_CFL_FORMAT_MASK);
+            }
             if(mc_gState->m_TmpScript->GetNumElements() >= 3) // 2 OP_DROPs + OP_RETURN - item key
             {
                 mc_gState->m_TmpScript->DeleteDuplicatesInRange(1,mc_gState->m_TmpScript->GetNumElements()-1);
@@ -2420,7 +2466,7 @@ int mc_WalletTxs::AddTx(mc_TxImport *import,const CWalletTx& tx,int block,CDiskT
                                         if(chunk_found)
                                         {
                                             memcpy(m_ChunkBuffer,chunk_found,chunk_size);
-                                            chunk_err=m_ChunkDB->AddChunk(chunk_hashes,&chunk_entity,(unsigned char*)&hash,i,m_ChunkBuffer,NULL,salt,chunk_size,0,salt_size,0);
+                                            chunk_err=m_ChunkDB->AddChunk(chunk_hashes,&chunk_entity,(unsigned char*)&hash,i,m_ChunkBuffer,NULL,salt,chunk_size,0,salt_size,chunk_flags);
                                             if(chunk_err)
                                             {
                                                 err=chunk_err;
@@ -2454,7 +2500,7 @@ int mc_WalletTxs::AddTx(mc_TxImport *import,const CWalletTx& tx,int block,CDiskT
                                         }
                                         if(insert_it)
                                         {
-                                            m_ChunkCollector->InsertChunk(chunk_hashes,&chunk_entity,(unsigned char*)&hash,i,chunk_size,salt_size);
+                                            m_ChunkCollector->InsertChunk(chunk_hashes,&chunk_entity,(unsigned char*)&hash,i,chunk_size,salt_size,chunk_flags);
                                         }
                                         // Feeding async chunk retriever here
                                     }
@@ -2658,7 +2704,10 @@ int mc_WalletTxs::AddTx(mc_TxImport *import,const CWalletTx& tx,int block,CDiskT
                             {
                                 if(imp->m_ImportID == 0)
                                 {
-                                    fNewStream=true;
+                                    if(mc_AutosubscribeWalletMode(GetArg("-autosubscribe","none"),true) & MC_WMD_AUTOSUBSCRIBE_STREAMS)
+                                    {
+                                        fNewStream=true;
+                                    }
                                 }
 /*                                
                                 else
@@ -2879,6 +2928,7 @@ int mc_WalletTxs::AddTx(mc_TxImport *import,const CWalletTx& tx,int block,CDiskT
         for(i=0;i<(int)txoutsIn.size();i++)
         {
             m_UTXOs[import_pos].erase(txoutsIn[i].m_OutPoint);
+            pEF->LIC_VerifyUpdateCoin(block,&(txoutsIn[i]),false);
         }
         for(i=0;i<(int)txoutsOut.size();i++)
         {
@@ -2900,6 +2950,7 @@ int mc_WalletTxs::AddTx(mc_TxImport *import,const CWalletTx& tx,int block,CDiskT
                     }
                 }
                 m_UTXOs[import_pos].insert(make_pair(txoutsOut[i].m_OutPoint, txoutsOut[i]));
+                pEF->LIC_VerifyUpdateCoin(block,&(txoutsOut[i]),true);
             }                    
         }
     }    
@@ -2925,6 +2976,16 @@ exitlbl:
             entity.m_EntityType=MC_TET_STREAM_PUBLISHER | MC_TET_TIMERECEIVED;
             m_Database->AddEntity(imp,&entity,0); 
 
+            entity.m_EntityType=MC_TET_STREAM | MC_TET_CHAINPOS;
+            err=pEF->STR_CreateAutoSubscription(&entity);
+            if(err == MC_ERR_FOUND)
+            {
+                err=MC_ERR_NOERROR;
+            }
+            if(err != MC_ERR_NOERROR)
+            {
+                LogPrintf("wtxs: Create Enterprise Subscription  Error: %d\n",err);                        
+            }
             if(mc_gState->m_Features->Chunks())
             {
                 entity.m_EntityType=MC_TET_STREAM;

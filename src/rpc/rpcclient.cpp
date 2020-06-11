@@ -221,7 +221,37 @@ static const std::string vAPINames[] =
 "verifypermission",
 "walletlock",
 "walletpassphrase",
-"walletpassphrasechange"    
+"walletpassphrasechange",
+"txouttobinarycache",    
+"trimsubscribe",
+"retrievestreamitems",
+"purgestreamitems",
+"purgepublisheditems",
+"getlicenserequest",
+"decodelicenserequest",
+"decodelicenseconfirmation",
+"listlicenses",
+"getlicenseconfirmation",
+"activatelicense",
+"transferlicense",
+"takelicense",
+"importlicenserequest",
+"createfeed",
+"deletefeed",
+"pausefeed",
+"resumefeed",
+"addtofeed",
+"updatefeed",
+"purgefeed",       
+"listfeeds",
+"getdatarefdata", 
+"datareftobinarycache"
+"listvariables"
+"getvariableinfo"
+"setvariablevalue"
+"setvariablevaluefrom"
+"getvariablevalue"
+"getvariablehistory"
 };
 
 static const CRPCConvertParam vRPCConvertParams[] =
@@ -267,6 +297,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "issuemore", 4 },                                                            
     { "getassetinfo", 1 },                                                            
     { "getstreaminfo", 1 },                                                            
+    { "getvariableinfo", 1 },                                                            
     { "getfiltertxinput", 0 },                                                            
     { "listassets", 0 },
     { "listassets", 1 },                                                            
@@ -276,6 +307,13 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "liststreams", 1 },                                                            
     { "liststreams", 2 },                                                            
     { "liststreams", 3 },                                                            
+    { "listvariables", 0 },
+    { "listvariables", 1 },                                                            
+    { "listvariables", 2 },                                                            
+    { "listvariables", 3 },                                                            
+    { "getvariablehistory", 1 },                                                            
+    { "getvariablehistory", 2 },                                                            
+    { "getvariablehistory", 3 },                                                            
     { "listupgrades", 0 },
     { "listupgrades", 1 },                                                            
     { "listupgrades", 2 },                                                            
@@ -504,6 +542,24 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "prioritisetransaction", 1 },
     { "prioritisetransaction", 2 },
     { "getlicenseconfirmation", 1 },
+    { "listlicenses", 0 },
+    { "listlicenses", 1 },
+    { "createfeed", 1 },
+    { "deletefeed", 1 },
+    { "pausefeed", 1 },
+    { "resumefeed", 1 },
+    { "addtofeed", 1 },
+    { "addtofeed", 4 },
+    { "updatefeed", 1 },
+    { "updatefeed", 4 },
+    { "listfeeds", 0 },
+    { "listfeeds", 1 },                                                            
+    { "getdatarefdata", 1 },
+    { "getdatarefdata", 2 },
+    { "datareftobinarycache", 2 },
+    { "datareftobinarycache", 3 },
+    { "setvariablevaluefrom", 2 },                                                            
+    { "setvariablevalue", 1 },                                                            
 };
 
 class CRPCConvertTable
@@ -597,6 +653,7 @@ static const CRPCConvertParamMayBeString vRPCConvertParamsMayBeString[] =
     { "liststreamtxitems", 1 },
     { "listassets", 0 },
     { "liststreams", 0 },
+    { "listvariables", 0 },
     { "listupgrades", 0 },
     { "listtxfilters", 0 },                                                            
     { "liststreamfilters", 0 },                                                            
@@ -610,6 +667,12 @@ static const CRPCConvertParamMayBeString vRPCConvertParamsMayBeString[] =
     { "listblocks", 0 },
     { "createfrom", 4 },                                                            
     { "create", 3 },                                                            
+    { "listlicenses", 0 },
+    { "addtofeed", 1 },
+    { "updatefeed", 1 },
+    { "listfeeds", 0 },
+    { "setvariablevaluefrom", 2 },                                                            
+    { "setvariablevalue", 1 },                                                                
 };
 
 class CRPCConvertTableMayBeString

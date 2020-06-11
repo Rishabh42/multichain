@@ -2,7 +2,7 @@
 // MultiChain code distributed under the GPLv3 license, see COPYING file.
 
 #include "utils/utilparse.h"
-#include "util.h"
+#include "version/clientversion.h"
 
 using namespace std;
 
@@ -202,6 +202,107 @@ bool IsLicenseTokenTransfer(mc_Script *lpScript,mc_Buffer *amounts)
     
     return false;
 }
+
+void AppendSpecialRowsToBuffer(mc_Buffer *amounts,uint256 hash,int expected_allowed,int expected_required,int *allowed,int *required,CAmount nValue)
+{
+    unsigned char buf[MC_AST_ASSET_FULLREF_BUF_SIZE];
+    int64_t quantity;
+    uint32_t type;
+    int row;
+ 
+    if( ( (expected_allowed & MC_PTP_ISSUE) && (*allowed & MC_PTP_ISSUE) ) ||
+        ( (expected_required & MC_PTP_ISSUE) && (*required & MC_PTP_ISSUE) && (hash == 0) ) )    
+    {
+            memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
+            type=MC_PTP_ISSUE | MC_PTP_SEND;
+            quantity=1;
+            mc_PutLE(buf+4,&type,4);
+            mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
+            mc_SetABQuantity(buf,quantity);
+            if(amounts->Seek(buf) < 0)
+            {
+                amounts->Add(buf);                
+            }
+    }
+
+    if( ( (expected_allowed & MC_PTP_CREATE) && (*allowed & MC_PTP_CREATE) ) ||
+        ( (expected_required & MC_PTP_CREATE) && (*required & MC_PTP_CREATE) && (hash == 0) ) )    
+    {
+            memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
+            type=MC_PTP_CREATE | MC_PTP_SEND;
+            quantity=1;
+            mc_PutLE(buf+4,&type,4);
+            mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
+            mc_SetABQuantity(buf,quantity);
+            if(amounts->Seek(buf) < 0)
+            {
+                amounts->Add(buf);                
+            }
+    }
+
+    if( ( (expected_allowed & MC_PTP_ADMIN) && (*allowed & MC_PTP_ADMIN) ) ||
+        ( (expected_required & MC_PTP_ADMIN) && (*required & MC_PTP_ADMIN) && (hash == 0) ) )    
+    {
+            memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
+            type=MC_PTP_ADMIN | MC_PTP_SEND;
+            quantity=1;
+            mc_PutLE(buf+4,&type,4);
+            mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
+            mc_SetABQuantity(buf,quantity);
+            if(amounts->Seek(buf) < 0)
+            {
+                amounts->Add(buf);                
+            }
+    }
+
+    if( ( (expected_allowed & MC_PTP_ACTIVATE) && (*allowed & MC_PTP_ACTIVATE) ) ||
+        ( (expected_required & MC_PTP_ACTIVATE) && (*required & MC_PTP_ACTIVATE) && (hash == 0) ) )    
+    {
+            memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
+            type=MC_PTP_ACTIVATE | MC_PTP_SEND;
+            quantity=1;
+            mc_PutLE(buf+4,&type,4);
+            mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
+            mc_SetABQuantity(buf,quantity);
+            if(amounts->Seek(buf) < 0)
+            {
+                amounts->Add(buf);                
+            }
+    }
+
+/*                                                                              // Not required, publish addresses are passed explicitly                
+    if( ( (expected_allowed & MC_PTP_WRITE) && (*allowed & MC_PTP_WRITE) ) ||
+        ( (expected_required & MC_PTP_WRITE) && (*required & MC_PTP_WRITE) && (hash == 0) ) )    
+    {
+            memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
+            type=MC_PTP_WRITE | MC_PTP_SEND;
+            quantity=1;
+            mc_PutLE(buf+4,&type,4);
+            mc_PutLE(buf+MC_AST_ASSET_QUANTITY_OFFSET,&quantity,MC_AST_ASSET_QUANTITY_SIZE);
+            if(amounts->Seek(buf) < 0)
+            {
+                amounts->Add(buf,buf+MC_AST_ASSET_QUANTITY_OFFSET);                
+            }
+    }
+*/
+    memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
+    type=MC_PTP_SEND;
+    mc_PutLE(buf+4,&type,4);
+    mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
+    quantity=nValue;
+    row=amounts->Seek(buf);
+    if(row >= 0)
+    {
+        quantity+=mc_GetABQuantity(amounts->GetRow(row));
+        mc_SetABQuantity(amounts->GetRow(row),quantity);
+    }
+    else
+    {
+        mc_SetABQuantity(buf,quantity);
+        amounts->Add(buf);                            
+    }                
+}
+
 /* 
  * Parses txout script into asset-quantity buffer
  * Use it only with unspent or not yet created outputs
@@ -473,6 +574,10 @@ bool ParseMultichainTxOutToBuffer(uint256 hash,                                 
                             {
                                 *required |= MC_PTP_CREATE;                    
                             }
+                            if(new_entity_type == MC_ENT_TYPE_VARIABLE)
+                            {
+                                *required |= MC_PTP_CREATE;                    
+                            }
                             if(new_entity_type == MC_ENT_TYPE_UPGRADE)
                             {
                                 *required |= MC_PTP_CREATE | MC_PTP_ADMIN;                    
@@ -490,7 +595,7 @@ bool ParseMultichainTxOutToBuffer(uint256 hash,                                 
                         }
                     }
                     
-                    if(lpScript->GetNumElements() == 3)                         // Publish
+                    if(lpScript->GetNumElements() == 3)                         // Publish or set variable
                     {
                         unsigned char short_txid[MC_AST_SHORT_TXID_SIZE];
                         lpScript->SetElement(0);
@@ -524,6 +629,29 @@ bool ParseMultichainTxOutToBuffer(uint256 hash,                                 
                                             }
                                         }                                    
                                     }
+                                }
+                                if(entity.GetEntityType() == MC_ENT_TYPE_VARIABLE)
+                                {
+                                    if(mapSpecialEntity)
+                                    {
+                                        if(required)
+                                        {
+                                            *required |= MC_PTP_WRITE;                    
+                                        }
+                                        std::map<uint32_t,uint256>::const_iterator it = mapSpecialEntity->find(MC_PTP_WRITE);
+                                        if (it == mapSpecialEntity->end())
+                                        {
+                                            mapSpecialEntity->insert(make_pair(MC_PTP_WRITE,*(uint256*)(entity.GetTxID())));
+                                        }
+                                        else
+                                        {
+                                            if(it->second != *(uint256*)(entity.GetTxID()))
+                                            {
+                                                strFailReason="Invalid publish script, multiple variables";
+                                                return false;                                                                                                            
+                                            }
+                                        }
+                                    }                                    
                                 }
                             }                        
                             else
@@ -627,97 +755,7 @@ bool ParseMultichainTxOutToBuffer(uint256 hash,                                 
                 }
             }
             
-            if( ( (expected_allowed & MC_PTP_ISSUE) && (*allowed & MC_PTP_ISSUE) ) ||
-                ( (expected_required & MC_PTP_ISSUE) && (*required & MC_PTP_ISSUE) && (hash == 0) ) )    
-            {
-                    memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
-                    type=MC_PTP_ISSUE | MC_PTP_SEND;
-                    quantity=1;
-                    mc_PutLE(buf+4,&type,4);
-                    mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
-                    mc_SetABQuantity(buf,quantity);
-                    if(amounts->Seek(buf) < 0)
-                    {
-                        amounts->Add(buf);                
-                    }
-            }
-
-            if( ( (expected_allowed & MC_PTP_CREATE) && (*allowed & MC_PTP_CREATE) ) ||
-                ( (expected_required & MC_PTP_CREATE) && (*required & MC_PTP_CREATE) && (hash == 0) ) )    
-            {
-                    memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
-                    type=MC_PTP_CREATE | MC_PTP_SEND;
-                    quantity=1;
-                    mc_PutLE(buf+4,&type,4);
-                    mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
-                    mc_SetABQuantity(buf,quantity);
-                    if(amounts->Seek(buf) < 0)
-                    {
-                        amounts->Add(buf);                
-                    }
-            }
-
-            if( ( (expected_allowed & MC_PTP_ADMIN) && (*allowed & MC_PTP_ADMIN) ) ||
-                ( (expected_required & MC_PTP_ADMIN) && (*required & MC_PTP_ADMIN) && (hash == 0) ) )    
-            {
-                    memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
-                    type=MC_PTP_ADMIN | MC_PTP_SEND;
-                    quantity=1;
-                    mc_PutLE(buf+4,&type,4);
-                    mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
-                    mc_SetABQuantity(buf,quantity);
-                    if(amounts->Seek(buf) < 0)
-                    {
-                        amounts->Add(buf);                
-                    }
-            }
-            
-            if( ( (expected_allowed & MC_PTP_ACTIVATE) && (*allowed & MC_PTP_ACTIVATE) ) ||
-                ( (expected_required & MC_PTP_ACTIVATE) && (*required & MC_PTP_ACTIVATE) && (hash == 0) ) )    
-            {
-                    memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
-                    type=MC_PTP_ACTIVATE | MC_PTP_SEND;
-                    quantity=1;
-                    mc_PutLE(buf+4,&type,4);
-                    mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
-                    mc_SetABQuantity(buf,quantity);
-                    if(amounts->Seek(buf) < 0)
-                    {
-                        amounts->Add(buf);                
-                    }
-            }
-
-/*                                                                              // Not required, publish addresses are passed explicitly                
-            if( ( (expected_allowed & MC_PTP_WRITE) && (*allowed & MC_PTP_WRITE) ) ||
-                ( (expected_required & MC_PTP_WRITE) && (*required & MC_PTP_WRITE) && (hash == 0) ) )    
-            {
-                    memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
-                    type=MC_PTP_WRITE | MC_PTP_SEND;
-                    quantity=1;
-                    mc_PutLE(buf+4,&type,4);
-                    mc_PutLE(buf+MC_AST_ASSET_QUANTITY_OFFSET,&quantity,MC_AST_ASSET_QUANTITY_SIZE);
-                    if(amounts->Seek(buf) < 0)
-                    {
-                        amounts->Add(buf,buf+MC_AST_ASSET_QUANTITY_OFFSET);                
-                    }
-            }
-*/
-            memset(buf,0,MC_AST_ASSET_FULLREF_BUF_SIZE);
-            type=MC_PTP_SEND;
-            mc_PutLE(buf+4,&type,4);
-            mc_SetABRefType(buf,MC_AST_ASSET_REF_TYPE_SPECIAL);
-            quantity=txout.nValue;
-            row=amounts->Seek(buf);
-            if(row >= 0)
-            {
-                quantity+=mc_GetABQuantity(amounts->GetRow(row));
-                mc_SetABQuantity(amounts->GetRow(row),quantity);
-            }
-            else
-            {
-                mc_SetABQuantity(buf,quantity);
-                amounts->Add(buf);                            
-            }            
+            AppendSpecialRowsToBuffer(amounts,hash,expected_allowed,expected_required,allowed,required,txout.nValue);
         }
         
     }    
@@ -1137,3 +1175,4 @@ int CheckRequiredPermissions(const CTxDestination& addressRet,int expected_allow
     
     return allowed;
 }
+

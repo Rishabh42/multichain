@@ -1563,6 +1563,15 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate,bo
             {
                 if(err == MC_ERR_NOERROR)
                 {
+                    err=pEF->FED_EventChunksAvailable();
+                    if(err)
+                    {
+                        LogPrintf("ERROR: Cannot write offchain items in block, error %d\n",err);
+                    }
+                    err=MC_ERR_NOERROR;
+                }
+                if(err == MC_ERR_NOERROR)
+                {
                     err=pwalletTxsMain->Commit(imp);
                     
                 }   
@@ -1601,8 +1610,17 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate,bo
                         pwalletTxsMain->AddTx(imp,tx,-1,NULL,-1,0);            
                     }
                 }
+                if(err == MC_ERR_NOERROR)
+                {
+                    err=pEF->FED_EventChunksAvailable();
+                    if(err)
+                    {
+                        LogPrintf("ERROR: Cannot write offchain items after mempool, error %d\n",err);
+                    }
+                    err=MC_ERR_NOERROR;
+                }
                 
-                err=pwalletTxsMain->CompleteImport(imp,((pindexStart->nHeight > 0) & !fOnlySubscriptions) ? MC_EFL_NOT_IN_SYNC_AFTER_IMPORT : 0);
+                err=pwalletTxsMain->CompleteImport(imp,((pindexStart->nHeight > 0) && !fOnlySubscriptions) ? MC_EFL_NOT_IN_SYNC_AFTER_IMPORT : 0);
             }
             else
             {
@@ -3342,19 +3360,28 @@ bool CWallet::DelEKey(const uint256& hashEKey)
     return CWalletDB(strWalletFile).EraseEKey(hashEKey);    
 }
 
-bool CWallet::SetLicenseRequest(const uint256& hash, const CLicenseRequest& license_request)
+bool CWallet::SetLicenseRequest(const uint256& hash, const CLicenseRequest& license_request,const uint256& full_hash)
 {
     {
         LOCK(cs_wallet); // mapLicenseRequests
         std::map<uint256, CLicenseRequest>::iterator mi = mapLicenseRequests.find(hash);
         if(mi != mapLicenseRequests.end())
         {
-            return false;
+            mi->second=license_request;
         }
-        
-        mapLicenseRequests.insert(make_pair(hash,license_request));
+        else
+        {
+            mapLicenseRequests.insert(make_pair(hash,license_request));
+        }
     }
-    LogPrintf("Stored license request %s in the wallet.\n",hash.ToString().c_str());
+    if(full_hash == 0)
+    {
+        LogPrintf("Stored license request %s in the wallet.\n",hash.ToString().c_str());
+    }
+    else
+    {
+        LogPrintf("Stored license request %s-%s in the wallet.\n",hash.ToString().c_str(),full_hash.ToString().c_str());        
+    }
     return CWalletDB(strWalletFile).WriteLicenseRequest(hash, license_request);        
 }
     

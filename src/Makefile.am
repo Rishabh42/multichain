@@ -233,6 +233,7 @@ libbitcoin_server_a_SOURCES = \
   rpc/rpcmisc.cpp \
   rpc/rpcnet.cpp \
   rpc/rpcrawtransaction.cpp \
+  rpc/rpcfeeds.cpp \
   rpc/rpcserver.cpp \
   script/sigcache.cpp \
   utils/timedata.cpp \
@@ -259,6 +260,7 @@ libbitcoin_wallet_a_SOURCES = \
   rpc/rpcstreams.cpp \
   rpc/rpcupgrades.cpp \
   rpc/rpcfilters.cpp \
+  rpc/rpcvariables.cpp \
   rpc/rpclicense.cpp \
   wallet/wallet.cpp \
   wallet/walletcoins.cpp \

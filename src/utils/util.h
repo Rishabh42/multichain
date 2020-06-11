@@ -33,11 +33,13 @@ extern std::map<std::string, std::vector<std::string> > mapMultiArgs;
 extern bool fDebug;
 extern bool fPrintToConsole;
 extern bool fPrintToDebugLog;
+extern bool fPauseLogPrint;
 extern bool fServer;
 extern std::string strMiscWarning;
 extern bool fLogTimestamps;
 extern bool fLogIPs;
 extern bool fLogTimeMillis;
+extern bool fInRecovery;
 extern volatile bool fReopenDebugLog;
 
 void SetupEnvironment();
@@ -96,6 +98,7 @@ bool RenameOver(boost::filesystem::path src, boost::filesystem::path dest);
 bool TryCreateDirectory(const boost::filesystem::path& p);
 std::string mc_SupportedProtocols();
 std::string mc_BuildDescription(int build);
+uint32_t mc_AutosubscribeWalletMode(std::string parameters,bool check_license);
 
 boost::filesystem::path GetDefaultDataDir();
 const boost::filesystem::path &GetDataDir(bool fNetSpecific = true);
@@ -103,7 +106,7 @@ const boost::filesystem::path &GetLogDir(bool fNetSpecific = true);
 boost::filesystem::path GetConfigFile();
 //#ifndef WIN32
 boost::filesystem::path GetPidFile();
-void CreatePidFile(const boost::filesystem::path &path, int pid);
+bool CreatePidFile(const boost::filesystem::path &path, int pid);
 //#endif
 void ReadConfigFile(std::map<std::string, std::string>& mapSettingsRet, std::map<std::string, std::vector<std::string> >& mapMultiSettingsRet);
 #ifdef WIN32

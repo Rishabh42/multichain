@@ -72,7 +72,7 @@ CNode* FindNode(const CNetAddr& ip);
 CNode* FindNode(const std::string& addrName);
 CNode* FindNode(const CService& ip);
 CNode* ConnectNode(CAddress addrConnect, const char *pszDest = NULL);
-bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOutbound = NULL, const char *strDest = NULL, bool fOneShot = false);
+bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOutbound = NULL, const char *strDest = NULL, bool fOneShot = false, bool fAllowSameIP = false);
 void MapPort(bool fUseUPnP);
 unsigned short GetListenPort();
 bool BindListenPort(const CService &bindAddr, std::string& strError, bool fWhitelisted = false);
@@ -177,6 +177,7 @@ public:
     CKeyID kAddrRemote;
     CKeyID kAddrLocal;    
     bool fSuccessfullyConnected;
+    bool fEncrypted;
 /* MCHN END */    
 };
 
@@ -277,6 +278,7 @@ public:
     
 /* MCHN START*/    
     
+    uint64_t nMultiChainServices;
     uint64_t nVersionNonceReceived;
     uint64_t nVersionNonceSent;
     uint64_t nVerackNonceReceived;
@@ -291,8 +293,13 @@ public:
     bool fCanConnectLocal;
     CKeyID kAddrRemote;
     CKeyID kAddrLocal;
+    int64_t nLastKBPerDestinationChangeTimestamp;
+    int nMaxKBPerDestination;
 
     CAddress addrFromVersion;
+    
+    void *pEntData;
+    int64_t nNextSendTime;
     
 /* MCHN END*/    
     
@@ -655,6 +662,8 @@ public:
     void Subscribe(unsigned int nChannel, unsigned int nHops=0);
     void CancelSubscribe(unsigned int nChannel);
     void CloseSocketDisconnect();
+    
+    bool DelayedSend();
 
     // Denial-of-service detection/prevention
     // The idea is to detect peers that are behaving

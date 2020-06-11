@@ -204,6 +204,10 @@ const char *mc_Params::SeedNode()
 
 const char* mc_State::GetSeedNode()
 {
+    if(m_SeedResolvedAddress[0])
+    {
+        return m_SeedResolvedAddress;
+    }
     const char *seed_node;
     seed_node=mc_gState->m_Params->SeedNode();
     if(seed_node == NULL)
@@ -219,6 +223,16 @@ const char* mc_State::GetSeedNode()
     }
     
     return seed_node;
+}
+
+int mc_State::SetSeedNode(const char* seed_resolved) 
+{
+    if(strlen(seed_resolved) >= 256)
+    {
+        return MC_ERR_INVALID_PARAMETER_VALUE;
+    }
+    strcpy(m_SeedResolvedAddress,seed_resolved);
+    return MC_ERR_NOERROR;
 }
 
 
@@ -393,6 +407,7 @@ void mc_CheckDataDirInConfFile()
             mc_ExpandDataDirParam();
         }
     }    
+    delete mapConfig;
 }
 
 
@@ -1015,19 +1030,26 @@ int mc_MultichainParams::Import(const char *name,const char *source_address)
     return MC_ERR_NOERROR;
 }
 
-std::string MultichainServerAddress()
+std::string MultichainServerAddress(bool check_external_ip)
 {
     string result=string(mc_gState->m_NetworkParams->Name());
     unsigned char *ptr;
     result+="@";
-    if(mc_gState->m_IPv4Address)
+    if(check_external_ip & (mapArgs.count("-externalip") > 0) )
     {
-        ptr=(unsigned char *)(&(mc_gState->m_IPv4Address));
-        result+=strprintf("%u.%u.%u.%u",ptr[3],ptr[2],ptr[1],ptr[0]);
+        result+=mapArgs["-externalip"];
     }
     else
     {
-        result+="<server-ip-address>";
+        if(mc_gState->m_IPv4Address)
+        {
+            ptr=(unsigned char *)(&(mc_gState->m_IPv4Address));
+            result+=strprintf("%u.%u.%u.%u",ptr[3],ptr[2],ptr[1],ptr[0]);
+        }
+        else
+        {
+            result+="<server-ip-address>";
+        }
     }
     
     return result;

@@ -161,6 +161,9 @@ typedef struct mc_Features
     int SaltedChunks();
     int FixedIn20010();
     int License20010();
+    int ExtendedEntityDetails();
+    int FixedSpendingBigScripts();
+    int Variables();
 } mc_Features;
 
 typedef struct mc_BlockHeaderInfo
@@ -199,6 +202,7 @@ typedef struct mc_TmpBuffers
     mc_Script               *m_RpcChunkScript1;
     mc_Script               *m_RelayTmpBuffer;
     mc_Script               *m_LicenseTmpBuffer;
+    mc_Script               *m_LicenseTmpBufferForHash;
     
     void  Init()
     {
@@ -225,6 +229,7 @@ typedef struct mc_TmpBuffers
         m_RpcChunkScript1=new mc_Script();
         m_RelayTmpBuffer=new mc_Script();
         m_LicenseTmpBuffer=new mc_Script();
+        m_LicenseTmpBufferForHash=new mc_Script();
     }    
 
     void  Destroy()
@@ -245,6 +250,7 @@ typedef struct mc_TmpBuffers
         delete m_RpcChunkScript1;
         delete m_RelayTmpBuffer;
         delete m_LicenseTmpBuffer;
+        delete m_LicenseTmpBufferForHash;
     }
     
 } mc_TmpBuffers;
@@ -276,6 +282,7 @@ typedef struct mc_State
     uint32_t m_SessionFlags;
     unsigned char m_BurnAddress[20];
     int m_EnterpriseBuild;
+    char m_SeedResolvedAddress[256];
     
     mc_Script               *m_TmpScript;
     mc_Script               *m_TmpScript1;
@@ -302,6 +309,7 @@ typedef struct mc_State
         m_SessionFlags=MC_SSF_DEFAULT;
         m_EnterpriseBuild=0;
         memset(m_BurnAddress,0,20);
+        memset(m_SeedResolvedAddress,0,256);
         
         m_IPv4Address=0;
         m_WalletMode=0;
@@ -387,6 +395,7 @@ typedef struct mc_State
     int IsSupported(int version);
     int IsDeprecated(int version);
     const char* GetSeedNode();
+    int SetSeedNode(const char* seed_resolved);
 } cs_State;
 
 

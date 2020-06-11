@@ -943,6 +943,7 @@ set <CTxDestination> LastActiveMiners(CBlockIndex* pindexTip, CPubKey *kLastMine
                         if(block.vSigner[0])
                         {
                             pindex->kMiner.Set(block.vSigner+1, block.vSigner+1+block.vSigner[0]);
+                            pindex->nStatus |= BLOCK_HAVE_MINER_PUBKEY;
                         }
                     }
                 }
@@ -1369,12 +1370,15 @@ void static BitcoinMiner(CWallet *pwallet)
                           || (mc_gState->m_NetworkParams->IsProtocolMultichain() == 0)
                            ) && Params().MiningRequiresPeers())
                     {
-                        vector<CNode*> vNodesCopy = vNodes;
-                        BOOST_FOREACH(CNode* pnode, vNodesCopy)
                         {
-                            if(pnode->fSuccessfullyConnected)
+                            LOCK(cs_vNodes);
+                            vector<CNode*> vNodesCopy = vNodes;
+                            BOOST_FOREACH(CNode* pnode, vNodesCopy)
                             {
-                                active_nodes++;
+                                if(pnode->fSuccessfullyConnected)
+                                {
+                                    active_nodes++;
+                                }
                             }
                         }
                     
@@ -1382,7 +1386,7 @@ void static BitcoinMiner(CWallet *pwallet)
                         {
                             MilliSleep(1000);
                             boost::this_thread::interruption_point();                                    
-                        }
+                        }                        
                     }
                 }
             }
@@ -1686,7 +1690,7 @@ void static BitcoinMiner(CWallet *pwallet)
             } 
             else
             {
-                if(mc_gState->m_Permissions->m_Block > 1)
+                if( (mc_gState->m_Permissions->m_Block > 1) || !kMiner.IsValid() )
                 {
                     __US_Sleep(100);                
                 }

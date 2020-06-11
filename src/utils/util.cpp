@@ -101,12 +101,14 @@ map<string, vector<string> > mapMultiArgs;
 bool fDebug = false;
 bool fPrintToConsole = false;
 bool fPrintToDebugLog = true;
+bool fPauseLogPrint = false;
 bool fDaemon = false;
 bool fServer = false;
 string strMiscWarning;
 bool fLogTimestamps = false;
 bool fLogIPs = false;
 bool fLogTimeMillis = false;
+bool fInRecovery = false;
 volatile bool fReopenDebugLog = false;
 
 /** Init OpenSSL library multithreading support */
@@ -228,6 +230,12 @@ bool LogAcceptCategory(const char* category)
 int LogPrintStr(const std::string &str)
 {
     int ret = 0; // Returns total number of characters written
+    
+    if(fPauseLogPrint)
+    {
+        return ret;
+    }
+    
     if (fPrintToConsole)
     {
         // print to console
@@ -560,14 +568,16 @@ boost::filesystem::path GetPidFile()
     return pathPidFile;
 }
 
-void CreatePidFile(const boost::filesystem::path &path, int pid)
+bool CreatePidFile(const boost::filesystem::path &path, int pid)
 {
+    bool file_already_exist=boost::filesystem::exists(path);
     FILE* file = fopen(path.string().c_str(), "w");
     if (file)
     {
         fprintf(file, "%d\n", pid);
         fclose(file);
     }
+    return file_already_exist;
 }
 //#endif
 

@@ -77,6 +77,8 @@ void mc_ChunkDB::Zero()
     m_ChunkData=NULL;
     m_TmpScript=NULL;
     
+    m_FeedPos=0;
+    
     m_Semaphore=NULL;
     m_LockedBy=0;    
 }
@@ -761,13 +763,18 @@ int mc_ChunkDB::RemoveEntityInternal(mc_TxEntity *entity,uint32_t *removed_chunk
                     file_offset=file_size;
                 }
             }
-//            pEF->STR_RemoveDataFromFile(FileHan,0,file_size,0);
         }
         
         
         if(FileHan>0)
         {
             close(FileHan);
+        }
+        
+        string reason;
+        if(pEF->LIC_VerifyFeature(MC_EFT_STREAM_OFFCHAIN_SELECTIVE_PURGE,reason))
+        {
+            pEF->STR_RemoveDataFromFile(FileName);
         }
     }
     
@@ -797,6 +804,7 @@ int mc_ChunkDB::RemoveEntityInternal(mc_TxEntity *entity,uint32_t *removed_chunk
         
         mc_RemoveDir(mc_gState->m_Params->NetworkName(),dir_name);
     }
+
 exitlbl:
             
 
@@ -1432,6 +1440,13 @@ int mc_ChunkDB::AddChunkInternal(
     subscription=FindSubscription(entity);
     if(subscription == NULL)
     {
+        mc_TxEntity new_entity;
+        memcpy(&new_entity,entity,sizeof(mc_TxEntity));
+        AddEntityInternal(&new_entity,0);
+        subscription=FindSubscription(entity);
+    }
+    if(subscription == NULL)
+    {
         LogString("Internal error: trying to add chunk to unsubscribed entity");
         return MC_ERR_INTERNAL_ERROR;
     }
@@ -1529,18 +1544,24 @@ int mc_ChunkDB::AddChunkInternal(
     if(total_items == 0)
     {
         m_TmpScript->SetSpecialParamValue(MC_ENT_SPRM_CHUNK_SIZE,(unsigned char*)&chunk_size,sizeof(chunk_size));
-        if(chunk_size)
-        {
-            m_TmpScript->SetSpecialParamValue(MC_ENT_SPRM_CHUNK_DATA,chunk,chunk_size);                
-        }
     }
     else
     {
         m_TmpScript->SetSpecialParamValue(MC_ENT_SPRM_ITEM_COUNT,(unsigned char*)&total_items,sizeof(total_items));        
     }
+    
+    chunk_def.m_HeaderSize=m_TmpScript->m_Size;
+    
+    if(total_items == 0)
+    {
+        if(chunk_size)
+        {
+            m_TmpScript->SetSpecialParamValue(MC_ENT_SPRM_CHUNK_DATA,chunk,chunk_size);                
+            chunk_def.m_HeaderSize=m_TmpScript->m_Size-chunk_size;
+        }
+    }    
 
-    chunk_def.m_Size=chunk_size;
-    chunk_def.m_HeaderSize=m_TmpScript->m_Size-chunk_size;
+    chunk_def.m_Size=chunk_size;    
     chunk_def.m_Flags=flags;
     
     ptr=m_TmpScript->GetData(0,&bytes);
@@ -1751,6 +1772,11 @@ unsigned char *mc_ChunkDB::GetChunkInternal(mc_ChunkDBRow *chunk_def,
         {
             return NULL;
         }
+        
+        if(chunk_def->m_HeaderSize >=0x80000000)                                // Fixing the overflow bug if data is not written
+        {
+            chunk_def->m_HeaderSize+=chunk_def->m_Size;
+        }
     
         read_from=chunk_def->m_InternalFileOffset;
         bytes_to_read=chunk_def->m_HeaderSize;
@@ -1762,6 +1788,12 @@ unsigned char *mc_ChunkDB::GetChunkInternal(mc_ChunkDBRow *chunk_def,
                 {
                     goto exitlbl;
                 }
+                m_TmpScript->Clear();
+                if(m_TmpScript->Resize(bytes_to_read,1))
+                {
+                    goto exitlbl;                                
+                }
+    
                 if(read(FileHan,m_TmpScript->m_lpData,bytes_to_read) != (int)bytes_to_read)
                 {
                     goto exitlbl;
@@ -1995,7 +2027,7 @@ int mc_ChunkDB::FlushSourceChunks(uint32_t flush_mode)
         chunk_def=(mc_ChunkDBRow *)m_MemPool->GetRow(row);
         if(chunk_def->m_SubscriptionID == 1)
         {
-            size=chunk_def->m_Size+chunk_def->m_HeaderSize;
+            size=chunk_def->m_Size+chunk_def->m_HeaderSize;                     // In source, chunk stored only once, with data
             if(subscription->m_LastFileSize+size > MC_CDB_MAX_FILE_SIZE)                          // New file is needed
             {
                 FlushDataFile(subscription,subscription->m_LastFileID,0);
@@ -2076,7 +2108,12 @@ int mc_ChunkDB::CommitInternal(int block,uint32_t flush_mode)
 
             if( (chunk_def->m_StorageFlags & MC_CFL_STORAGE_FLUSHED) == 0)
             {
-                size=chunk_def->m_Size+chunk_def->m_HeaderSize;
+//                size=chunk_def->m_Size+chunk_def->m_HeaderSize;               // Fixed bug, chunk itself is not always stored
+                size=chunk_def->m_HeaderSize;
+                if( (chunk_def->m_Pos + chunk_def->m_TmpOnDiskItems) == 0)
+                {
+                    size+=chunk_def->m_Size;
+                }
                 if(subscription->m_LastFileSize+size > MC_CDB_MAX_FILE_SIZE)                          // New file is needed
                 {
                     FlushDataFile(subscription,subscription->m_LastFileID,flush_mode);
@@ -2190,6 +2227,7 @@ exitlbl:
             sprintf(msg,"NewBlock %d, Chunks: %d,",block,m_MemPool->GetCount());
             LogString(msg);   
         }
+        m_FeedPos=0;
         m_MemPool->Clear();
         m_ChunkData->Clear();
     }
@@ -2201,6 +2239,11 @@ exitlbl:
 int mc_ChunkDB::Commit(int block)
 {
     int err;
+    
+    if(block)
+    {
+        pEF->FED_EventChunksAvailable();    
+    }
     
     Lock();
     err=CommitInternal(block,0);

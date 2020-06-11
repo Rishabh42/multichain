@@ -55,8 +55,9 @@ int mc_MultiChainFilter::Zero()
     m_CreateError="Not Initialized";
     m_FilterType=MC_FLT_TYPE_TX;
     m_FilterCaption="Unknown";
-    m_FilterCode[0]=0x00;
     m_FilterAddress=0;
+    m_FilterCodeRow=0;
+    m_AlreadyUsed=false;
     
     return MC_ERR_NOERROR;
 }
@@ -133,12 +134,14 @@ int mc_MultiChainFilter::Initialize(const unsigned char* short_txid)
     }
     
     
-    ptr=(unsigned char *)m_Details.GetSpecialParam(MC_ENT_SPRM_FILTER_CODE,&value_size);
-    
+    ptr=(unsigned char *)m_Details.GetSpecialParam(MC_ENT_SPRM_FILTER_CODE,&value_size,1);
     if(ptr)
     {
-        memcpy(m_FilterCode,ptr,value_size);
-        m_FilterCode[value_size]=0x00;    
+        unsigned char ntc=0x00;
+        m_FilterCodeRow=pMultiChainFilterEngine->m_CodeLibrary->GetNumElements();
+        pMultiChainFilterEngine->m_CodeLibrary->AddElement();
+        pMultiChainFilterEngine->m_CodeLibrary->SetData(ptr,value_size);
+        pMultiChainFilterEngine->m_CodeLibrary->SetData(&ntc,1);        
     }                                    
     else
     {    
@@ -169,6 +172,7 @@ int mc_MultiChainFilterEngine::Zero()
     m_TxID=0;
     m_Workers=NULL;
     m_CallbackNames.clear();
+    m_CodeLibrary=NULL;
     
     return MC_ERR_NOERROR;
 }
@@ -190,6 +194,10 @@ int mc_MultiChainFilterEngine::Destroy()
         delete m_Workers;
     }
     
+    if(m_CodeLibrary)
+    {
+        delete m_CodeLibrary;
+    }
     
     Zero();
     
@@ -242,7 +250,11 @@ int mc_MultiChainFilterEngine::Add(const unsigned char* short_txid,int for_block
     mc_Filter *worker=new mc_Filter;
     m_Workers->Add(&worker);
     
-    err=pFilterEngine->CreateFilter(m_Filters.back().m_FilterCode,m_Filters.back().m_MainName.c_str(),
+    char *code;
+    size_t code_size;
+    code=(char *)m_CodeLibrary->GetData(m_Filters.back().m_FilterCodeRow,&code_size);
+    
+    err=pFilterEngine->CreateFilter(code,m_Filters.back().m_MainName.c_str(),
             m_CallbackNames[m_Filters.back().m_FilterType],worker,(for_block == 0) ? GetAcceptTimeout() : 0,m_Filters.back().m_CreateError);
     if(err)
     {
@@ -277,7 +289,11 @@ int mc_MultiChainFilterEngine::Reset(int block,int for_block)
         if(fDebug)LogPrint("filter","filter: Filter rolled back: %s\n",m_Filters.back().m_FilterCaption.c_str());
         mc_Filter *worker=*(mc_Filter **)m_Workers->GetRow(m_Workers->GetCount()-1);
         worker->Destroy();
-        m_Workers->SetCount(m_Workers->GetCount()-1);
+        m_Workers->SetCount(m_Workers->GetCount()-1);        
+        if(m_Filters.back().m_FilterCodeRow > 0)
+        {
+            m_CodeLibrary->DeleteElement(m_Filters.back().m_FilterCodeRow);
+        }
         m_Filters.back().Destroy();
         m_Filters.pop_back();
         if(m_Filters.size()>0)
@@ -294,7 +310,10 @@ int mc_MultiChainFilterEngine::Reset(int block,int for_block)
     {
         mc_Filter *worker=*(mc_Filter **)m_Workers->GetRow(i);
         
-        err=pFilterEngine->CreateFilter(m_Filters[i].m_FilterCode,m_Filters[i].m_MainName,m_CallbackNames[m_Filters[i].m_FilterType],
+        char *code;
+        size_t code_size;
+        code=(char *)m_CodeLibrary->GetData(m_Filters[i].m_FilterCodeRow,&code_size);
+        err=pFilterEngine->CreateFilter(code,m_Filters[i].m_MainName,m_CallbackNames[m_Filters[i].m_FilterType],
                 worker,m_Filters[i].m_CreateError);
         if(err)
         {
@@ -336,6 +355,7 @@ int mc_MultiChainFilterEngine::RunStreamFilters(const CTransaction& tx,int vout,
         return MC_ERR_NOERROR;
     }
     
+    bool only_once=false;
     int err=MC_ERR_NOERROR;
     strResult="";
     m_Tx=tx;
@@ -365,11 +385,26 @@ int mc_MultiChainFilterEngine::RunStreamFilters(const CTransaction& tx,int vout,
             if(mc_gState->m_Permissions->FilterApproved(stream_entity_txid,&(m_Filters[i].m_FilterAddress)))
             {
                 mc_Filter *worker=*(mc_Filter **)m_Workers->GetRow(i);
-                err=pFilterEngine->RunFilter(worker,strResult);
-                if(err)
+                bool run_it=true;
+                while(run_it)
                 {
-                    LogPrintf("Error while running filter %s, error: %d\n",m_Filters[i].m_FilterCaption.c_str(),err);
-                    goto exitlbl;
+                    err=pFilterEngine->RunFilter(worker,strResult);
+                    if(err)
+                    {
+                        LogPrintf("Error while running filter %s, error: %d\n",m_Filters[i].m_FilterCaption.c_str(),err);
+                        goto exitlbl;
+                    }
+                    run_it=false;
+                    if(strResult.size())
+                    {
+                        if(!only_once && !m_Filters[i].m_AlreadyUsed)
+                        {
+                            if(fDebug)LogPrint("filter","filter: stream filter %s failure on first attempt: %s, retrying\n",m_Filters[i].m_FilterCaption.c_str(),strResult.c_str());
+                            run_it=true;
+                            strResult="";
+                        }
+                    }
+                    m_Filters[i].m_AlreadyUsed=true;
                 }
                 if(strResult.size())
                 {
@@ -400,7 +435,7 @@ exitlbl:
     return err;    
 }
 
-int mc_MultiChainFilterEngine::RunTxFilters(const CTransaction& tx,std::set <uint160>& sRelevantEntities,std::string &strResult,mc_MultiChainFilter **lppFilter,int *applied)
+int mc_MultiChainFilterEngine::RunTxFilters(const CTransaction& tx,std::set <uint160>& sRelevantEntities,std::string &strResult,mc_MultiChainFilter **lppFilter,int *applied,bool only_once)
 {
     int err=MC_ERR_NOERROR;
     strResult="";
@@ -424,11 +459,26 @@ int mc_MultiChainFilterEngine::RunTxFilters(const CTransaction& tx,std::set <uin
                 if(m_Filters[i].HasRelevantEntity(sRelevantEntities))
                 {
                     mc_Filter *worker=*(mc_Filter **)m_Workers->GetRow(i);
-                    err=pFilterEngine->RunFilter(worker,strResult);
-                    if(err)
+                    bool run_it=true;
+                    while(run_it)
                     {
-                        LogPrintf("Error while running filter %s, error: %d\n",m_Filters[i].m_FilterCaption.c_str(),err);
-                        goto exitlbl;
+                        err=pFilterEngine->RunFilter(worker,strResult);
+                        if(err)
+                        {
+                            LogPrintf("Error while running filter %s, error: %d\n",m_Filters[i].m_FilterCaption.c_str(),err);
+                            goto exitlbl;
+                        }
+                        run_it=false;
+                        if(strResult.size())
+                        {
+                            if(!only_once && !m_Filters[i].m_AlreadyUsed)
+                            {
+                                if(fDebug)LogPrint("filter","filter: tx filter %s failure on first attempt: %s, retrying\n",m_Filters[i].m_FilterCaption.c_str(),strResult.c_str());
+                                run_it=true;
+                                strResult="";
+                            }
+                        }
+                        m_Filters[i].m_AlreadyUsed=true;
                     }
                     if(strResult.size())
                     {
@@ -547,6 +597,10 @@ int mc_MultiChainFilterEngine::Initialize()
  
     m_Workers=new mc_Buffer;
     m_Workers->Initialize(sizeof(mc_Filter*),sizeof(mc_Filter*),MC_BUF_MODE_DEFAULT);
+    
+    m_CodeLibrary=new mc_Script;
+    m_CodeLibrary->Clear();
+    m_CodeLibrary->AddElement();
     
     SetCallbackNames();
     

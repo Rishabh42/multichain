@@ -15,6 +15,7 @@
 #include "structs/uint256.h"
 #include "utils/util.h"
 #include "utils/utilstrencodings.h"
+#include "multichain/multichain.h"
 
 #ifdef HAVE_GETADDRINFO_A
 #include <netdb.h>
@@ -43,6 +44,9 @@ static CService nameProxy;
 static CCriticalSection cs_proxyInfos;
 int nConnectTimeout = DEFAULT_CONNECT_TIMEOUT;
 bool fNameLookup = false;
+uint64_t nMainThreadID=0;
+
+std::map <string,CNetAddr> mCachedAddresses;
 
 static const unsigned char pchIPv4[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff };
 
@@ -87,6 +91,101 @@ void SplitHostPort(std::string in, int &portOut, std::string &hostOut) {
 }
 
 bool static LookupIntern(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nMaxSolutions, bool fAllowLookup)
+{
+    vIP.clear();
+
+    {
+        CNetAddr addr;
+        if (addr.SetSpecial(std::string(pszName))) {
+            vIP.push_back(addr);
+            return true;
+        }
+    }
+
+    struct in_addr ipv4_addr;
+#ifdef HAVE_GETADDRINFO_A
+#ifdef HAVE_INET_PTON
+    
+    if (inet_pton(AF_INET, pszName, &ipv4_addr) > 0) {
+        vIP.push_back(CNetAddr(ipv4_addr));
+        return true;
+    }
+
+    struct in6_addr ipv6_addr;
+    if (inet_pton(AF_INET6, pszName, &ipv6_addr) > 0) {
+        vIP.push_back(CNetAddr(ipv6_addr));
+        return true;
+    }
+
+#else
+    ipv4_addr.s_addr = inet_addr(pszName);
+    if (ipv4_addr.s_addr != INADDR_NONE) {
+        vIP.push_back(CNetAddr(ipv4_addr));
+        return true;
+    }
+#endif
+#else
+    ipv4_addr.s_addr = inet_addr(pszName);
+    if (ipv4_addr.s_addr != INADDR_NONE) {
+        vIP.push_back(CNetAddr(ipv4_addr));
+        return true;
+    }
+#endif
+
+/*    
+    struct in_addr ipv4_addr;
+    ipv4_addr.s_addr = inet_addr(pszName);
+    if (ipv4_addr.s_addr != INADDR_NONE) {
+        vIP.push_back(CNetAddr(ipv4_addr));
+        return true;
+    }
+*/
+    if(nMainThreadID != __US_ThreadID())
+    {
+        LogPrintf("ERROR: Calling address lookup for %s from secondary thread, please report this\n",pszName);
+        return false;
+    }    
+
+    struct addrinfo aiHint;
+    memset(&aiHint, 0, sizeof(struct addrinfo));
+    aiHint.ai_socktype = SOCK_STREAM;
+    aiHint.ai_protocol = IPPROTO_TCP;
+    aiHint.ai_family = AF_UNSPEC;
+#ifdef WIN32
+    aiHint.ai_flags = fAllowLookup ? 0 : AI_NUMERICHOST;
+#else
+    aiHint.ai_flags = fAllowLookup ? AI_ADDRCONFIG : AI_NUMERICHOST;
+#endif
+
+    struct addrinfo *aiRes = NULL;
+    int nErr = getaddrinfo(pszName, NULL, &aiHint, &aiRes);
+    if (nErr)
+        return false;
+
+    struct addrinfo *aiTrav = aiRes;
+    while (aiTrav != NULL && (nMaxSolutions == 0 || vIP.size() < nMaxSolutions))
+    {
+        if (aiTrav->ai_family == AF_INET)
+        {
+            assert(aiTrav->ai_addrlen >= sizeof(sockaddr_in));
+            vIP.push_back(CNetAddr(((struct sockaddr_in*)(aiTrav->ai_addr))->sin_addr));
+        }
+
+        if (aiTrav->ai_family == AF_INET6)
+        {
+            assert(aiTrav->ai_addrlen >= sizeof(sockaddr_in6));
+            vIP.push_back(CNetAddr(((struct sockaddr_in6*)(aiTrav->ai_addr))->sin6_addr));
+        }
+
+        aiTrav = aiTrav->ai_next;
+    }
+
+    freeaddrinfo(aiRes);
+
+    return (vIP.size() > 0);
+}
+
+bool LookupIntern_a(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nMaxSolutions, bool fAllowLookup)
 {
     vIP.clear();
 
@@ -653,8 +752,21 @@ CNetAddr::CNetAddr(const std::string &strIp, bool fAllowLookup)
 {
     Init();
     std::vector<CNetAddr> vIP;
-    if (LookupHost(strIp.c_str(), vIP, 1, fAllowLookup))
-        *this = vIP[0];
+    
+    map<string, CNetAddr>::const_iterator it=mCachedAddresses.find(strIp);
+    if(it != mCachedAddresses.end())
+    {
+        *this = it->second;
+    }
+    else
+    {
+        if (LookupHost(strIp.c_str(), vIP, 1, fAllowLookup))
+        {
+            mCachedAddresses.insert(make_pair(strIp,vIP[0]));            
+            *this = vIP[0];
+        }
+    }
+        
 }
 
 unsigned int CNetAddr::GetByte(int n) const

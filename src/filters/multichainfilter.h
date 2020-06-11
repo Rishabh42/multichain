@@ -31,9 +31,10 @@ typedef struct mc_MultiChainFilter
     std::string m_CreateError;
     std::string m_MainName;
     std::string m_FilterCaption;
-    char m_FilterCode[MC_ENT_MAX_SCRIPT_SIZE+1];
     uint32_t m_FilterType;
+    int m_FilterCodeRow;
     uint160 m_FilterAddress;
+    bool m_AlreadyUsed;
     
     mc_MultiChainFilter()
     {
@@ -79,6 +80,7 @@ typedef struct mc_MultiChainFilterEngine
     std::vector <mc_MultiChainFilter> m_Filters;
     std::vector <std::vector <std::string>> m_CallbackNames;
     mc_Buffer *m_Workers;
+    mc_Script *m_CodeLibrary;
     uint256 m_TxID;
     CTransaction m_Tx;
     int m_Vout;
@@ -101,7 +103,7 @@ typedef struct mc_MultiChainFilterEngine
     int SetTimeout(int timeout);    
     int Add(const unsigned char* short_txid,int for_block);
     int Reset(int block,int for_block);
-    int RunTxFilters(const CTransaction& tx,std::set <uint160>& sRelevantEntities,std::string &strResult,mc_MultiChainFilter **lppFilter,int *applied);            
+    int RunTxFilters(const CTransaction& tx,std::set <uint160>& sRelevantEntities,std::string &strResult,mc_MultiChainFilter **lppFilter,int *applied,bool only_once);            
     int RunStreamFilters(const CTransaction& tx,int vout, unsigned char *stream_short_txid,int block,int offset,std::string &strResult,mc_MultiChainFilter **lppFilter,int *applied);            
     int RunFilter(const CTransaction& tx,mc_Filter *filter,std::string &strResult);            
     int RunFilterWithCallbackLog(const CTransaction& tx,int vout,mc_Filter *filter,std::string &strResult, json_spirit::Array& callbacks);

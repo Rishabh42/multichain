@@ -1397,7 +1397,7 @@ void mc_InitRPCHelpMap06()
     
     mapHelpStrings.insert(std::make_pair("create",
             "create \"entity-type\" \"entity-name\" open ( custom-fields )\n"
-            "\nCreates stream or upgrade\n"
+            "\nCreates stream, upgrade, filter or variable\n"
             + HelpRequiringPassphraseWrapper() +
             "\nArguments:\n"
             "1. \"entity-type\"                    (string, required) stream\n"
@@ -1418,7 +1418,7 @@ void mc_InitRPCHelpMap06()
             "1. \"entity-type\"                    (string, required) upgrade\n"
             "2. \"upgrade-name\"                   (string, required) Upgrade name, if not \"\" should be unique.\n"
             "3. open                             (boolean, required) Should be false\n"
-            "4  custom-fields                    (object, required)  a json object with custom fields\n"
+            "4. custom-fields                    (object, required) A json object with custom fields\n"
             "    {\n"
             "      \"protocol-version\": version   (numeric, optional) Protocol version to upgrade to\n"
             "      \"parameter-name\": value       (numeric, optional) New value for upgradable parameter, one of: \n"
@@ -1471,7 +1471,13 @@ void mc_InitRPCHelpMap06()
             "                                                           if (item.keys.length<2)\n"
             "                                                               return \"At least two keys required\";\n"
             "                                                       }   \n"
-
+/*    
+            "  or \n"
+            "1. entity-type                      (string, required) variable\n"
+            "2. \"variable-name\"                  (string, required) Variable name, if not \"\" should be unique.\n"
+            "3. open                             (boolean, optional) Should be false\n"
+            "4. value                            (any data, optional, default null) Variable value (JSON objects and arrays allowed).\n"
+*/
 
             "\nResult:\n"
             "\"transactionid\"  (string) The transaction id.\n"
@@ -1483,7 +1489,7 @@ void mc_InitRPCHelpMap06()
     
     mapHelpStrings.insert(std::make_pair("createfrom",
             "createfrom \"from-address\" \"entity-type\" \"entity-name\" open ( custom-fields )\n"
-            "\nCreates stream using specific address\n"
+            "\nCreates stream, upgrade, filter or variable using specific address\n"
             + HelpRequiringPassphraseWrapper() +
             "\nArguments:\n"
             "1. \"from-address\"                   (string, required) Address used for creating.\n"
@@ -1505,8 +1511,8 @@ void mc_InitRPCHelpMap06()
             "1. \"from-address\"                   (string, required) Address used for creating.\n"
             "2. entity-type                      (string, required) upgrade\n"
             "3. \"upgrade-name\"                   (string, required) Upgrade name, if not \"\" should be unique.\n"
-            "4. open                             (boolean, required ) Should be false\n"
-            "5  custom-fields                    (object, required)  a json object with custom fields\n"
+            "4. open                             (boolean, required) Should be false\n"
+            "5. custom-fields                    (object, required) A json object with custom fields\n"
             "    {\n"
             "      \"protocol-version\": version   (numeric, optional) Protocol version to upgrade to \n"
             "      \"parameter-name\": value       (numeric, optional) New value for upgradable parameter, one of: \n"
@@ -1561,7 +1567,14 @@ void mc_InitRPCHelpMap06()
             "                                                             if (item.keys.length<2)\n"
             "                                                                 return \"At least two keys required\";\n"
             "                                                         }   \n"
-
+/*    
+            "  or \n"
+            "1. \"from-address\"                   (string, required) Address used for creating.\n"
+            "2. entity-type                      (string, required) variable\n"
+            "3. \"variable-name\"                  (string, required) Variable name, if not \"\" should be unique.\n"
+            "4. open                             (boolean, optional) Should be false\n"
+            "5. value                            (any data, optional, default null) Variable value (JSON objects and arrays allowed).\n"
+*/
             "\nResult:\n"
             "\"transactionid\"                     (string) The transaction id.\n"
             "\nExamples:\n"
@@ -2060,7 +2073,7 @@ void mc_InitRPCHelpMap09()
             "3. count-bytes                      (numeric, optional, default=INT_MAX) Number of bytes to return\n"
             "4. start-byte                       (numeric, optional, default=0) start from specific byte \n"
             "\nResult:\n"
-            "\"data-hex\"                          (string) transaction output metadata in hexadecimal form.\n"
+            "data                                  (string) transaction output metadata.\n"
             "\nExamples:\n"
             "\nView the data\n"
             + HelpExampleCli("gettxoutdata", "\"txid\" 1") +
@@ -2360,7 +2373,6 @@ void mc_InitRPCHelpMap10()
             "      \"name\" : \"asset-name\"         (string, optional) Asset name\n"
             "      \"open\" : true|false           (boolean, optional, default false) True if follow-on issues are allowed\n"
             "      \"restrict\" : \"restrictions\"   (string, optional) Permission strings, comma delimited. Possible values: send,receive\n"
-            "      ,...\n"
             "    }\n"                                
             "3. quantity                         (numeric, required) The asset total amount in display units. eg. 1234.56\n"
             "4. smallest-unit                    (numeric, optional, default=1) Number of raw units in one displayed unit, eg 0.01 for cents\n"
@@ -2392,7 +2404,6 @@ void mc_InitRPCHelpMap10()
             "      \"name\" : \"asset-name\"         (string, optional) Asset name\n"
             "      \"open\" : true|false           (boolean, optional, default false) True if follow-on issues are allowed\n"
             "      \"restrict\" : \"restrictions\"   (string, optional) Permission strings, comma delimited. Possible values: send,receive\n"
-            "      ,...\n"
             "    }\n"                                
             "4. quantity                         (numeric, required) The asset total amount in display units. eg. 1234.56\n"
             "5. smallest-unit                    (numeric, optional, default=1) Number of raw units in one displayed unit, eg 0.01 for cents\n"
@@ -3969,8 +3980,23 @@ void mc_InitRPCHelpMap16()
             "      \"for\": \"entity-identifier\"      (string, optional) Only for tx filters, Asset/stream identifier - one of: create txid, stream reference, stream name.\n"
             "        or\n"
             "      \"for\": entity-identifier(s)     (array, optional) Only for tx filters, A json array of asset/stream identifiers .\n"    
-            "      \"code\"                          (string, required) JavaScript filter code, see help filters.\n"
+            "      \"code\": \"filter-code\"           (string, required) JavaScript filter code, see help filters.\n"
+            "    }\n"    
+/*    
+            " or\n"
+            "create-new-variable                   (object, required) A json object with new variable details\n"
+            "    {\n"                
+            "      \"create\" : \"variable\"           (string, required) variable\n"
+            "      \"name\" : \"variable-name\"        (string, optional) Variable name\n"
+            "      \"value\": value                  (any data, optional, default null) Variable value (JSON objects and arrays allowed).\n"
             "    }\n"                                
+            " or\n"
+            "set-variable-value                    (object, required) A json object with new variable value\n"
+            "    {\n"
+            "      \"update\" : \"variable-identifier\" (string, required) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            "      \"value\": value                  (any data, optional, default null) Variable value (JSON objects and arrays allowed).\n"
+            "    }\n"                                
+ */ 
         ));
 
     mapHelpStrings.insert(std::make_pair("data-with",
@@ -4836,11 +4862,488 @@ void mc_InitRPCHelpMap20()
     
     mapHelpStrings.insert(std::make_pair("getlicenserequest",
             "getlicenserequest \n"
-        ));
+            "\nReturns license request.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getlicenserequest", "") 
+            + HelpExampleRpc("getlicenserequest", "")    
+       ));
    
-    mapHelpStrings.insert(std::make_pair("AAAAAAA",
+    mapHelpStrings.insert(std::make_pair("decodelicenserequest",
+            "decodelicenserequest \"license-request-hex\"\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nReturns a JSON object representing the serialized, hex-encoded license request.\n"
+
+            "\nArguments:\n"
+            "1. \"license-request-hex\"                          (string, required) The license request hex string (output of getlicenserequest)\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("decodelicenserequest", "\"hexstring\"")
+            + HelpExampleRpc("decodelicenserequest", "\"hexstring\"")
+      ));
+   
+    mapHelpStrings.insert(std::make_pair("decodelicenseconfirmation",
+            "decodelicenseconfirmation \"license-confirmation-hex\"\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nReturns a JSON object representing the serialized, hex-encoded license confirmation.\n"
+
+            "\nArguments:\n"
+            "1. \"license-confirmation-hex\"                     (string, required) The license confirmation hex string (input of activatelicense)\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("decodelicenseconfirmation", "\"hexstring\"")
+            + HelpExampleRpc("decodelicenseconfirmation", "\"hexstring\"")
+      ));
+   
+}
+
+void mc_InitRPCHelpMap21()
+{
+    mapHelpStrings.insert(std::make_pair("listlicenses",
+            "listlicenses ( license-identifier(s) verbose ) \n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nReturns list of licenses owned by this node\n"
+            "\nArguments:\n"
+            "1. \"license-identifier(s)\"          (string, optional, default=*) License identifier - one of the following:\n"
+            "                                                                           (license) name\n"
+            "                                                                           confirmation->licensehash\n"
+            "                                                                           transactions->issuetxid\n"
+            "                                                                           transactions->assetref\n"
+            "                                                                           transactions->lasttxid\n"
+            " or\n"
+            "1. license-identifier(s)            (array, optional) A json array of license identifiers \n"                
+            "2. verbose                          (boolean, optional, default=false) If true, returns extended license information \n"
+            "\nResult:\n"
+            "An array containing list of licenses\n"            
+            "\nExamples:\n"
+            + HelpExampleCli("listlicenses", "")
+            + HelpExampleRpc("listlicenses", "")
+        ));
+    
+    mapHelpStrings.insert(std::make_pair("getlicenseconfirmation",
+            "getlicenseconfirmation \"license-request-hex\" ( confirmation-settings )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nReturns license confirmation.\n"
+
+            "\nArguments:\n"
+            "1. \"license-request-hex\"                          (string, required) The license request hex string (output of getlicenserequest)\n"
+            "2. confirmation-settings                          (integer, optional) Number of confirmations with default settings to return\n"
+            "  or\n"
+            "2. confirmation-settings                          (object, optional) Confirmation settings for new request. Possible fields:\n"
+            "                                                       count, integer, number of confirmations with these settings to return\n"
+            "                                                       starttime, integer\n"
+            "                                                       endtime,  integer\n"
+            "                                                       interval, integer (in case of conflict with endtime, the last field counts)\n"
+            "                                                       features, integer or hexadecimal string\n"
+            "                                                       single feature, as it appears in the output of listlicenses, boolean\n"
+            "                                                                         (in case of conflict with features, the last field counts)\n"
+            "                                                       flags,  integer\n"
+            "                                                       params,  a json object with custom parameters\n"
+            "                                                       details,  a json object with custom details\n"
+            "  or\n"
+            "2. confirmation-settings                          (object, optional) Confirmation settings for request extension. Possible fields:\n"
+            "                                                       extension, required, boolean, should be true\n"
+            "                                                       interval, integer, optional, default - like in previous license\n"
+            "                                                       delay, integer, optional, delay after last license end time, default 0  \n"
+            "  or\n"
+            "2. confirmation-settings                          (array, optional) Array of objects as described above, \"count\" field is ignored\n"
+
+            "\nReturns array of license confirmations.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getlicenseconfirmation", "\"hexstring\"")
+            + HelpExampleRpc("getlicenseconfirmation", "\"hexstring\"")
+      ));
+   
+    mapHelpStrings.insert(std::make_pair("activatelicense",
+            "activatelicense ( \"license-confirmation-hex\" )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nActivates Enterprise license.\n"
+
+            "\nArguments:\n"
+            "1. \"license-confirmation-hex\"                     (string, optional) The license confirmation hex string\n"
+            "                                                       If omitted, empty, self-signed license is activated.\n"
+
+            "\nResult:\n"
+            "\"transactionid\"                     (string) The transaction id.\n"
+    
+            "\nExamples:\n"
+            + HelpExampleCli("activatelicense", "\"hexstring\"")
+            + HelpExampleRpc("activatelicense", "\"hexstring\"")
+      ));
+   
+    mapHelpStrings.insert(std::make_pair("activatelicensefrom",
+            "activatelicensefrom \"from-address\" ( \"license-confirmation-hex\" )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nActivates Enterprise license.\n"
+
+            "\nArguments:\n"
+            "1. \"from-address\"                     (string, required) Address used for publishing.\n"
+            "2. \"license-confirmation-hex\"                     (string, optional) The license confirmation hex string\n"
+            "                                                       If omitted, empty, self-signed license is activated.\n"
+
+            "\nResult:\n"
+            "\"transactionid\"                     (string) The transaction id.\n"
+    
+            "\nExamples:\n"
+            + HelpExampleCli("activatelicensefrom", "\"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\" \"hexstring\"")
+            + HelpExampleRpc("activatelicensefrom", "\"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\", \"hexstring\"")
+      ));
+   
+    mapHelpStrings.insert(std::make_pair("transferlicense",
+            "transferlicense \"license-identifier\" \"license-request-hex\" \n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nTransfers Enterprise license.\n"
+
+            "\nArguments:\n"
+            "1. \"license-identifier\"                  (string, required) License identifier - one of the following (see output of listlicenses):\n"
+            "                                                                           (license) name\n"
+            "                                                                           confirmation->licensehash\n"
+            "                                                                           transactions->issuetxid\n"
+            "                                                                           transactions->assetref\n"
+            "                                                                           transactions->lasttxid\n"
+            "2. \"license-request-hex\"                 (string, required) The license confirmation hex string\n"
+            "\nResult:\n"
+            "\"transactionid\"                          (string) The transaction id.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("transferlicense", "\"license-7952-5b4c-fe80-1667\" \"hexstring\"")
+            + HelpExampleRpc("transferlicense", "\"license-7952-5b4c-fe80-1667\",\"hexstring\"")
+      ));
+   
+    mapHelpStrings.insert(std::make_pair("takelicense",
+            "takelicense \"license-identifier\"  \n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nTake Enterprise license to this node and stop any other from using it.\n"
+
+            "\nArguments:\n"
+            "1. \"license-identifier\"                  (string, required) License identifier - one of the following (see output of listlicenses):\n"
+            "                                                                           (license) name\n"
+            "                                                                           confirmation->licensehash\n"
+            "                                                                           transactions->issuetxid\n"
+            "                                                                           transactions->assetref\n"
+            "                                                                           transactions->lasttxid\n"
+            "\nResult:\n"
+            "\"transactionid\"                          (string) The transaction id.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("takelicense", "\"license-7952-5b4c-fe80-1667\"")
+            + HelpExampleRpc("takelicense", "\"license-7952-5b4c-fe80-1667\"")
+      ));
+   
+    mapHelpStrings.insert(std::make_pair("importlicenserequest",
+            "importlicenserequest \"license-request-hex\" \n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nImports license request.\n"
+
+            "\nArguments:\n"
+            "1. \"license-request-hex\"                          (string, required) The license request hex string (output of getlicenserequest)\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("importlicenserequest", "\"hexstring\"")
+            + HelpExampleRpc("importlicenserequest", "\"hexstring\"")
+      ));
+   
+     mapHelpStrings.insert(std::make_pair("getinitstatus",
+            "getinitstatus\n"
+            "\nReturns information about initialization status of this node\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getinitstatus", "")
+            + HelpExampleRpc("getinitstatus", "")
+        ));
+  
+    
+    mapHelpStrings.insert(std::make_pair("createfeed",
+            "createfeed \"feed-name\" ( parameters ) \n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nCreates feed\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. parameters                       (object, optional) Feed parameters. Supported parameters: \n"
+            "                                                         directory - feed output directory, MultiChain will attempt to create it.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("createfeed", "feed1")
+            + HelpExampleRpc("createfeed", "feed1")
+        ));
+    
+    mapHelpStrings.insert(std::make_pair("deletefeed",
+            "deletefeed \"feed-name\" ( force )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nDeletes feed. \n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. force                            (string, optional, default false) Delete feed even with unsuspended subscriptions and not purged files.\n"
+            "                                                         Feed directory is not deleted.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("deletefeedfeed", "feed1")
+            + HelpExampleRpc("deletefeedfeed", "feed1")
+        ));
+    
+    mapHelpStrings.insert(std::make_pair("pausefeed",
+            "pausefeed \"feed-name\" ( buffer )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nPauses output to feed\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. buffer                           (optional, default=true) Store feed events in temporary buffer while paused\n"
+            "\nExamples:\n"
+            + HelpExampleCli("pausefeed", "feed1")
+            + HelpExampleRpc("pausefeed", "feed1")
+        ));
+    
+    mapHelpStrings.insert(std::make_pair("resumefeed",
+            "resumefeed \"feed-name\" ( buffer )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nResumes output to feed\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. buffer                           (optional, default=true) Try to restore events from temporary buffer\n"
+            "\nExamples:\n"
+            + HelpExampleCli("resumefeed", "feed1")
+            + HelpExampleRpc("resumefeed", "feed1")
+        ));
+    
+    mapHelpStrings.insert(std::make_pair("listfeeds",
+            "listfeeds ( feed-name(s) verbose ) \n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nReturns list of feeds defined on this node\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, optional, default=*) Feed name\n"
+            " or\n"
+            "1. feed-name(s)                     (array, optional) A json array of feed names \n"                
+            "2. verbose                          (boolean, optional, default=false) If true, returns extended feed information \n"
+            "\nResult:\n"
+            "An array containing list of feeds\n"            
+            "\nExamples:\n"
+            + HelpExampleCli("listfeeds", "")
+            + HelpExampleRpc("listfeeds", "")
+        ));
+    
+    
+}
+void mc_InitRPCHelpMap22()
+{
+     mapHelpStrings.insert(std::make_pair("addtofeed",
+            "addtofeed \"feed-name\" entities ( \"globals\" \"action\" options )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nAdds subscriptions to feed.\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. \"entities\"                       (string, required) Stream identifier - one of: create txid, stream reference, stream name.\n"
+            " or\n"
+            "2. entities                         (array, optional) A json array of stream identifiers \n"                
+            "3. \"globals\"                        (string, optional, default \"\") One of the following: \"blocks\",\"none\",\"\".\n"
+            "4. \"action\"                         (string, optional, default=rescan) Immediate action:\n"
+            "                                                         rescan - rescan and start processing, \n"
+            "                                                         start - start processing without rescanning,\n"
+            "                                                         suspend - suspend subscription,\n"
+            "5. options                          (object, optional) JSON object of subscription options, see help feed-options for details.\n"
+            "\nNote: This call can take minutes to complete if action=rescan.\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("addtofeed", "\"feed1\" \"test-stream\" \"\" \"rescan\" \"{\\\"maxshowndata\\\":256}\"") 
+            + HelpExampleCli("addtofeed", "\"feed1\" \"test-stream\" blocks suspend") 
+            + HelpExampleRpc("addtofeed", "\"feed1\", \"test-stream\"")
+         ));
+   
+     mapHelpStrings.insert(std::make_pair("updatefeed",
+            "updatefeed \"feed-name\" entities ( \"globals\" \"action\" options )\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nUpdates subscriptions in feed.\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. \"entities\"                       (string, required) Stream identifier - one of: create txid, stream reference, stream name. Or \"*\" or \"none\".\n"
+            " or\n"
+            "2. entities                         (array, optional) A json array of stream identifiers \n"                
+            "3. \"globals\"                        (string, optional, default \"\") One of the following: \"blocks\",\"*\",\"none\",\"\".\n"
+            "4. \"action\"                         (string, optional, default=none) Modification action:\n"
+            "                                                         none - don't change current state, \n"
+            "                                                         rescan - rescan for non-suspended subscriptions, \n"
+            "                                                         sync - rescan for non-suspended subscriptions that are not in sync, \n"
+            "                                                         start - unsuspend subscriptions that are suspended,\n"
+            "                                                         start,rescan - start followed by rescan,\n"
+            "                                                         start,sync - start followed by sync,\n"
+            "                                                         suspend - suspend subscription(s),\n"
+            "                                                         delete - delete subscription(s)\n"
+            "5. options                          (object, optional) JSON object of subscription options, see help feed-options for details.\n"
+            "\nNote: This call can take minutes to complete if action=rescan.\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("updatefeed", "\"feed1\" \"*\" \"\" \"none\" \"{\\\"maxshowndata\\\":256}\"") 
+            + HelpExampleCli("updatefeed", "\"feed1\" \"test-stream\" blocks suspend") 
+            + HelpExampleRpc("updatefeed", "\"feed1\", \"test-stream\"")
+         ));
+   
+     mapHelpStrings.insert(std::make_pair("getdatarefdata",
+            "getdatarefdata \"dataref\" ( count-bytes start-byte )\n"
+            "\nReturns metadata referenced by dataref.\n"
+            "\nArguments:\n"
+            "1. \"dataref\"                        (string, required) Dataref\n"
+            "2. count-bytes                      (numeric, optional, default=INT_MAX) Number of bytes to return\n"
+            "3. start-byte                       (numeric, optional, default=0) start from specific byte \n"
+            "\nResult:\n"
+            "data                                (string) transaction output metadata.\n"
+            "\nExamples:\n"
+            "\nView the data\n"
+            + HelpExampleCli("getdatarefdata", "\"dataref\"") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("getdatarefdata", "\"dataref\"")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("datareftobinarycache",
+            "datareftobinarycache \"identifier\" \"dataref\" ( count-bytes start-byte )\n"
+            "\nStores metadata referenced by dataref in binary cache.\n"    
+            "\nArguments:\n"
+            "1. \"identifier\"                     (string, required) Binary cache item identifier\n"
+            "2. \"dataref\"                        (string, required) Dataref\n"
+            "3. count-bytes                      (numeric, optional, default=INT_MAX) Number of bytes to return\n"
+            "4. start-byte                       (numeric, optional, default=0) start from specific byte \n"
+            "\nResult:\n"
+            "size                                (numeric) Size of the binary cache item\n"
+            "\nExamples:\n"
+            "\nView the data\n"
+            + HelpExampleCli("datareftobinarycache", "\"TjnVWwHYEg4\" \"dataref\"") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("datareftobinarycache", "\"TjnVWwHYEg4\", \"dataref\"")
+        ));
+     
+    mapHelpStrings.insert(std::make_pair("purgefeed",
+            "purgefeed \"feed-name\" file|days|\"*\"\n"
+            "\nAvailable only in Enterprise Edition.\n"
+            "\nPurges old feed files\n"
+            "\nArguments:\n"
+            "1. \"feed-name\"                      (string, required) Feed name\n"
+            "2. file                             (integer, required) >= 0 Purge files before this file, normally, adapter read file.\n"
+            " or\n"    
+            "2. days                             (integer, required) <0 Purge only events more than this number of days ago.\n"
+            " or\n"    
+    
+            "2. \"*\"                              (string, required) Purge all files and reset feed pointer \n"
+            "\nExamples:\n"
+            + HelpExampleCli("purgefeed", "feed1 1000")
+            + HelpExampleRpc("purgefeed", "feed1, 1000")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("feed-options",
+            "The following options can be specified in 'options' parameter of updatefeed API:\n"
+            "      override (boolean, default false) - when used with entities='*', override previously defined options for each entity\n"
+            "\nThe following parameters can be specified in 'options' parameter of addtofeed, updatefeed APIs:\n"
+            "      maxshowndata (integer) - maximal size of the data which can be written in the feed file\n"
+            "      nostreamfilters (boolean, default false) - skip running of stream filters on feed items\n"
+            "\nThe following events can be enabled/disabled in addtofeed, updatefeed APIs, boolean, default true \n"     
+            "      blockaddend, blockremoveend  \n"
+            "      itemconfirmed, itemunconfirmed  \n"
+            "      offchainavailable, offchainpurged \n"
+            "\nThe following fields can be enabled/disabled in addtofeed, updatefeed APIs, boolean, default true, \n"
+            "      blockaddstart-height,blockaddstart-txcount,blockaddstart-time,blockaddstart-miner, blockaddstart-size,\n"
+            "      blockaddend-height,blockaddend-txcount,blockaddend-time,blockaddend-miner, blockaddend-size,\n"
+            "      blockremovestart-height,\n"
+            "      blockremoveend-height,\n"
+            "      itemreceived-txid,itemreceived-vout,itemreceived-stream,itemreceived-publisher,itemreceived-key,itemreceived-format,itemreceived-size, \n"
+            "      itemreceived-flags,itemreceived-binary,itemreceived-text,itemreceived-json,itemreceived-dataref,itemreceived-timereceived, \n"
+            "      itemconfirmed-stream,itemconfirmed-blockheight,itemconfirmed-blockhash,itemconfirmed-blocktime,itemconfirmed-dataref,itemconfirmed-offsetinblock, \n"
+            "      itemunconfirmed-stream,\n"
+            "      iteminvalid-stream, \n"
+            "      offchainavailable-stream,offchainavailable-format,offchainavailable-size,offchainavailable-flags,\n"
+            "      offchainavailable-binary,offchainavailable-text,offchainavailable-json,offchainavailable-dataref,offchainavailable-timereceived, \n"
+            "      offchainpurged-stream \n"
+            "\nThe following events CAN NOT be disabled in addtofeed, updatefeed APIs, but still included in the feed\n"     
+            "      blockaddstart,blockremovestart,itemreceived,iteminvalid\n"
+            "\nThe following fields CAN NOT be disabled in addtofeed, updatefeed APIs, but still included in the feed\n"     
+            "      blockaddstart-hash,blockaddend-hash,blockremovestart-hash,blockremoveend-hash,\n"
+            "      itemreceived-id,itemconfirmed-id,itemunconfirmed-id,iteminvalid-id,offchainavailable-id,offchainpurged-id\n"
+        ));
+    
+}
+
+void mc_InitRPCHelpMap23()
+{
+    mapHelpStrings.insert(std::make_pair("setvariablevaluefrom",
+            "setvariablevaluefrom \"from-address\" \"variable-identifier\" value \n"
+            "\nSets variable value\n"
+            + HelpRequiringPassphraseWrapper() +
+            "\nArguments:\n"
+            "1. \"from-address\"                   (string, required) Address used for setting variable value.\n"
+            "2. \"variable-identifier\"            (string, required) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            "3. value                            (any data, optional, default null) Variable value (JSON objects and arrays allowed).\n"
+            "\nResult:\n"
+            "\"transactionid\"                     (string) The transaction id.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("setvariablevaluefrom", "\"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\" \"var1\" \"{\\\"count\\\":8}\"")
+            + HelpExampleRpc("setvariablevaluefrom", "\"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\", \"var1\", \"{\\\"count\\\":8}\"")
+        ));
+    
+    mapHelpStrings.insert(std::make_pair("setvariablevalue",
+            "setvariablevalue \"variable-identifier\" value \n"
+            "\nChanges variable value\n"
+            + HelpRequiringPassphraseWrapper() +
+            "\nArguments:\n"
+            "1. \"variable-identifier\"            (string, required) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            "2. value                            (any data, optional, default null) Variable value (JSON objects and arrays allowed).\n"
+            "\nResult:\n"
+            "\"transactionid\"                     (string) The transaction id.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("setvariablevalue", "\"var1\" \"{\\\"count\\\":8}\"")
+            + HelpExampleRpc("setvariablevalue", "\"var1\", \"{\\\"count\\\":8}\"")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("listvariables",
+            "listvariables ( variable-identifier(s) verbose count start )\n"
+            "\nReturns list of defined variables\n"
+            "\nArguments:\n"
+            "1. \"variable-identifier(s)\"           (string, optional, default=*) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            " or\n"
+            "1. variable-identifier(s)             (array, optional) A json array of variable identifiers \n"                
+            "2. verbose                          (boolean, optional, default=false) If true, last txid and writers \n"
+            "3. count                            (number, optional, default=INT_MAX - all) The number of variables to display\n"
+            "4. start                            (number, optional, default=-count - last) Start from specific variable, 0 based, if negative - from the end\n"
+            "\nResult:\n"
+            "An array containing list of defined variables\n"            
+            "\nExamples:\n"
+            + HelpExampleCli("listvariables", "")
+            + HelpExampleRpc("listvariables", "")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("getvariablehistory",
+            "getvariablehistory ( \"variable-identifier\" verbose count start )\n"
+            "\nReturns variable value changes history\n"
+            "\nArguments:\n"
+            "1. \"variable-identifier\"            (string, required) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            "2. verbose                          (boolean, optional, default=false) If true, returns txid and writer address\n"
+            "3. count                            (number, optional, default=INT_MAX - all) The number of value changes to display\n"
+            "4. start                            (number, optional, default=-count - last) Start from specific value change, 0 based, if negative - from the end\n"
+            "\nResult:\n"
+            "An array containing variable value changes history\n"            
+            "\nExamples:\n"
+            + HelpExampleCli("getvariablehistory", "\"var1\"")
+            + HelpExampleRpc("getvariablehistory", "\"var1\"")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("getvariableinfo",
+            "getvariableinfo ( \"variable-identifier\" verbose )\n"
+            "\nReturns information about defined variable\n"
+            "\nArguments:\n"
+            "1. \"variable-identifier\"            (string, required) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            "2. verbose                          (boolean, optional, default=false) If true, last txid and writers \n"
+            "\nResult:\n"
+            "An object containing information about defined variable\n"            
+            "\nExamples:\n"
+            + HelpExampleCli("getvariableinfo", "\"var1\"")
+            + HelpExampleRpc("getvariableinfo", "\"var1\"")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("getvariablevalue",
+            "getvariablevalue ( \"variable-identifier\" )\n"
+            "\nReturns current variable value\n"
+            "\nArguments:\n"
+            "1. \"variable-identifier\"            (string, required) Variable identifier - one of: create txid, variable reference, variable name.\n"
+            "\nResult:\n"
+            "Current variable value\n"            
+            "\nExamples:\n"
+            + HelpExampleCli("getvariablevalue", "\"var1\"")
+            + HelpExampleRpc("getvariablevalue", "\"var1\"")
+        ));
+    
+     mapHelpStrings.insert(std::make_pair("AAAAAAA",
             ""
         ));
+    
     
 }
 
@@ -4914,6 +5417,11 @@ void mc_InitRPCAllowedWhenOffline()
     setAllowedWhenOffline.insert("walletlock");    
     setAllowedWhenOffline.insert("walletpassphrase");    
     setAllowedWhenOffline.insert("walletpassphrasechange");    
+    
+    setAllowedWhenOffline.insert("decodelicenserequest");    
+    setAllowedWhenOffline.insert("decodelicenseconfirmation");    
+    setAllowedWhenOffline.insert("getlicenseconfirmation");    
+    
 }
 
 void mc_InitRPCHelpMap()
@@ -4938,6 +5446,9 @@ void mc_InitRPCHelpMap()
     mc_InitRPCHelpMap18();
     mc_InitRPCHelpMap19();
     mc_InitRPCHelpMap20();
+    mc_InitRPCHelpMap21();
+    mc_InitRPCHelpMap22();
+//    mc_InitRPCHelpMap23();
     
     pEF->ENT_InitRPCHelpMap();
     

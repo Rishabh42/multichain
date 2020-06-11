@@ -58,16 +58,19 @@
 #define MC_ENT_TYPE_UPGRADE           0x10
 #define MC_ENT_TYPE_FILTER            0x11
 #define MC_ENT_TYPE_LICENSE_TOKEN     0x12
-#define MC_ENT_TYPE_MAX               0x12
+#define MC_ENT_TYPE_VARIABLE          0x13
+#define MC_ENT_TYPE_MAX               0x13
 
-#define MC_ENT_SPRM_NAME                      0x01
+#define MC_ENT_SPRM_NAME                      0x01                              // Cross-entity parameters
 #define MC_ENT_SPRM_FOLLOW_ONS                0x02
 #define MC_ENT_SPRM_ISSUER                    0x03
 #define MC_ENT_SPRM_ANYONE_CAN_WRITE          0x04
 #define MC_ENT_SPRM_JSON_DETAILS              0x05
 #define MC_ENT_SPRM_PERMISSIONS               0x06
 #define MC_ENT_SPRM_RESTRICTIONS              0x07
-#define MC_ENT_SPRM_ASSET_MULTIPLE            0x41
+#define MC_ENT_SPRM_JSON_VALUE                0x08
+
+#define MC_ENT_SPRM_ASSET_MULTIPLE            0x41                              // Entity-specific parameters
 #define MC_ENT_SPRM_UPGRADE_PROTOCOL_VERSION  0x42
 #define MC_ENT_SPRM_UPGRADE_START_BLOCK       0x43
 #define MC_ENT_SPRM_UPGRADE_CHAIN_PARAMS      0x44
@@ -75,18 +78,29 @@
 #define MC_ENT_SPRM_FILTER_CODE               0x46
 #define MC_ENT_SPRM_FILTER_TYPE               0x47
 
-#define MC_ENT_SPRM_LICENSE_REQUEST_HASH      0x60
-#define MC_ENT_SPRM_LICENSE_REQUEST_ADDRESS   0x61
+#define MC_ENT_SPRM_ASSET_TOTAL               0x51                              // Optimization parameters
+#define MC_ENT_SPRM_CHAIN_INDEX               0x52 
+#define MC_ENT_SPRM_LEFT_POSITION             0x53 
+
+#define MC_ENT_SPRM_LICENSE_LICENSE_HASH      0x60                              // License parameters
+#define MC_ENT_SPRM_LICENSE_ISSUE_ADDRESS     0x61
 #define MC_ENT_SPRM_LICENSE_CONFIRMATION_TIME 0x62
 #define MC_ENT_SPRM_LICENSE_CONFIRMATION_REF  0x63
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X64     0x64
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X65     0x65
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X66     0x66
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X67     0x67
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X68     0x68
 #define MC_ENT_SPRM_LICENSE_PUBKEY            0x69
-#define MC_ENT_SPRM_LICENSE_MIN_VERSION       0x6A
+#define MC_ENT_SPRM_LICENSE_MIN_NODE          0x6A
 #define MC_ENT_SPRM_LICENSE_MIN_PROTOCOL      0x6B
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X6C     0x6C
+#define MC_ENT_SPRM_LICENSE_RESERVED_0X6D     0x6D
 #define MC_ENT_SPRM_LICENSE_CONFIRMATION_DETAILS  0x6E
 #define MC_ENT_SPRM_LICENSE_SIGNATURE         0x6F
 
 
-#define MC_ENT_SPRM_TIMESTAMP                 0x81
+#define MC_ENT_SPRM_TIMESTAMP                 0x81                              // Chunk DB parameters
 #define MC_ENT_SPRM_CHUNK_HASH                0x82
 #define MC_ENT_SPRM_SOURCE_TXID               0x83
 #define MC_ENT_SPRM_SOURCE_VOUT               0x84
@@ -155,11 +169,13 @@ typedef struct mc_EntityLedgerRow
     uint32_t m_ScriptSize;                                                      // Script Size
     int64_t m_Quantity;                                                         // Total quantity of the entity (including follow-ons)
     uint32_t m_EntityType;                                                      // Entity type - MC_ENT_TYPE_ constants
-    uint32_t m_Reserved1;                                                       // Reserved to align to 96 bytes
+    int32_t m_ExtendedScript;                                                   // Size of extended script when in file, row+1 in temp buffer if in mempool
     int64_t m_PrevPos;                                                          // Position of the previous entity in the ledger
     int64_t m_FirstPos;                                                         // Position in the ledger corresponding to first object in the chain
     int64_t m_LastPos;                                                          // Position in the ledger corresponding to last object in the chain before this object
     int64_t m_ChainPos;                                                         // Position in the ledger corresponding to last object in the chain
+    int32_t m_ScriptMemPoolPos;                                                 // Position of script in temp script buffer, -1 if not in temp buffer
+    int32_t m_ExtendedScriptMemPoolPos;                                         // Position of extended script in temp script buffer, -1 if not in temp buffer
     unsigned char m_Script[MC_ENT_SCRIPT_ALLOC_SIZE];                           // Script > MC_ENT_MAX_SCRIPT_SIZE + MC_ENT_MAX_FIXED_FIELDS_SIZE + 27*MC_ENT_MAX_STORED_ISSUERS
     
     void Zero();
@@ -204,6 +220,7 @@ typedef struct mc_EntityDetails
     uint64_t GetQuantity();
     uint32_t GetEntityType();    
     const void* GetSpecialParam(uint32_t param,size_t* bytes);
+    const void* GetSpecialParam(uint32_t param,size_t* bytes,int check_extended_script);
     const void* GetParam(const char *param,size_t* bytes);
     int32_t NextParam(uint32_t offset,uint32_t* param_value_start,size_t *bytes);
 }mc_EntityDetails;
@@ -219,6 +236,9 @@ typedef struct mc_EntityLedger
     uint32_t m_ValueOffset;                                                     // Offset of the value in mc_EntityLedgerRow structure, 36 
     uint32_t m_ValueSize;                                                       // Size of the ledger value 28 if protocol<=10003, 60 otherwise
     uint32_t m_TotalSize;                                                       // Totals size of the ledger row
+    uint32_t m_MemPoolSize;                                                     // Totals size of the ledger row in mempool
+    uint32_t m_MaxScriptMemPoolSize;                                            // Maximal script size stored in mempool
+    unsigned char m_ZeroBuffer[96];
    
     mc_EntityLedger()
     {
@@ -251,6 +271,8 @@ typedef struct mc_AssetDB
     mc_Buffer   *m_MemPool;
     mc_Buffer   *m_TmpRelevantEntities;
     mc_Buffer   *m_ShortTxIDCache;
+    mc_Script   *m_ExtendedScripts;
+    mc_Script   *m_RowExtendedScript;
     
     char m_Name[MC_PRM_NETWORK_NAME_MAX_SIZE+1]; 
     int m_Block;
@@ -276,9 +298,9 @@ typedef struct mc_AssetDB
 
     int Initialize(const char *name,int mode);
         
-    int InsertEntity(const void* txid, int offset, int entity_type, const void *script,size_t script_size, const void* special_script, size_t special_script_size,int update_mempool);
-    int InsertAsset(const void* txid, int offset, int asset_type, uint64_t quantity,const char *name,int multiple,const void *script,size_t script_size, const void* special_script, size_t special_script_size,int update_mempool);
-    int InsertAssetFollowOn(const void* txid, int offset, uint64_t quantity, const void *script,size_t script_size, const void* special_script, size_t special_script_size,const void* original_txid,int update_mempool);
+    int InsertEntity(const void* txid, int offset, int entity_type, const void *script,size_t script_size, const void* special_script, size_t special_script_size,int32_t extended_script_row,int update_mempool);
+    int InsertAsset(const void* txid, int offset, int asset_type, uint64_t quantity,const char *name,int multiple,const void *script,size_t script_size, const void* special_script, size_t special_script_size,int32_t extended_script_row,int update_mempool);
+    int InsertAssetFollowOn(const void* txid, int offset, uint64_t quantity, const void *script,size_t script_size, const void* special_script, size_t special_script_size,int32_t extended_script_row,const void* original_txid,int update_mempool);
     int Commit();
     int RollBack(int block);
     int RollBack();
@@ -295,6 +317,8 @@ typedef struct mc_AssetDB
     int FindEntityByName(mc_EntityDetails *entity, const char* name);    
     int FindEntityByFollowOn(mc_EntityDetails *entity, const unsigned char* txid);    
     int FindEntityByFullRef (mc_EntityDetails *entity, unsigned char* full_ref);
+    int FindLastEntity(mc_EntityDetails *last_entity, mc_EntityDetails *entity);    
+    int FindLastEntityByGenesis(mc_EntityDetails *last_entity, mc_EntityDetails *genesis_entity);    
     
     unsigned char *CachedTxIDFromShortTxID(unsigned char *short_txid);
     int SetRollBackPos(int block,int offset,int inmempool);
@@ -305,8 +329,11 @@ typedef struct mc_AssetDB
     mc_Buffer *GetEntityList(mc_Buffer *old_result,const void* txid,uint32_t entity_type);
     void FreeEntityList(mc_Buffer *entities);
     mc_Buffer *GetFollowOns(const void* txid);
+    mc_Buffer *GetFollowOnsByLastEntity(mc_EntityDetails *last_entity,int count,int start);
     int HasFollowOns(const void* txid);
     int64_t GetTotalQuantity(mc_EntityDetails *entity);
+    int64_t GetTotalQuantity(mc_EntityDetails *entity,int32_t *chain_size);
+    int64_t GetChainLeftPosition(mc_EntityDetails *entity,int32_t index);
     
     void RemoveFiles();
     uint32_t MaxEntityType();
@@ -316,7 +343,11 @@ typedef struct mc_AssetDB
 //Internal functions    
     int Zero();
     int Destroy();
-    int64_t GetTotalQuantity(mc_EntityLedgerRow *row);
+    int64_t GetTotalQuantity(mc_EntityLedgerRow *row,int32_t *chain_size);
+    int64_t GetChainLeftPosition(mc_EntityLedgerRow *row,int32_t index);
+    int64_t GetChainPosition(mc_EntityLedgerRow *row,int32_t index);
+    void AddToMemPool(mc_EntityLedgerRow *row);
+    void GetFromMemPool(mc_EntityLedgerRow *row,int mprow);
         
 } mc_AssetDB;
 

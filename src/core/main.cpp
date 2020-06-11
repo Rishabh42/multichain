@@ -64,7 +64,8 @@ bool AcceptAssetTransfers(const CTransaction& tx, const CCoinsViewCache &inputs,
 bool AcceptAssetGenesis(const CTransaction &tx,int offset,bool accept,string& reason);
 bool AcceptPermissionsAndCheckForDust(const CTransaction &tx,bool accept,string& reason);
 bool ReplayMemPool(CTxMemPool& pool, int from,bool accept);
-bool VerifyBlockSignature(CBlock *block,bool force,bool in_sync);
+bool VerifyBlockSignatureType(CBlock *block);
+bool VerifyBlockSignature(CBlock *block,bool force);
 bool VerifyBlockMiner(CBlock *block,CBlockIndex* pindexNew);
 bool CheckBlockPermissions(const CBlock& block,CBlockIndex* prev_block,unsigned char *lpMinerAddress);
 bool ProcessMultichainRelay(CNode* pfrom, CDataStream& vRecv, CValidationState &state);
@@ -107,6 +108,7 @@ bool fReindex = false;
 bool fTxIndex = false;
 bool fIsBareMultisigStd = true;
 unsigned int nCoinCacheSize = 5000;
+int GenesisBlockSize=0;
 int nLastForkedHeight=0;
 vector<CBlockIndex*> vFirstOnThisHeight;
 
@@ -1628,6 +1630,14 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         
         
         int err=MC_ERR_NOERROR;
+        
+        err=pEF->FED_EventTx(tx,-1,NULL,-1,0,0);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot write tx %s to feeds, error %d\n",hash.ToString().c_str(),err);
+        }
+        
+        err=MC_ERR_NOERROR;
         if(wtx)
         {
             err=pwalletTxsMain->AddTx(NULL,*wtx,-1,NULL,-1,0);
@@ -1643,6 +1653,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                              error("AcceptToMemoryPool: : AcceptMultiChainTransaction failed %s : %s", hash.ToString(),reason),
                              REJECT_INVALID, reason);            
         }
+        err=MC_ERR_NOERROR;
         
         permissions_to=mc_gState->m_Permissions->m_MempoolPermissions->GetCount();
         entry.SetReplayNodeParams(( (replay & MC_PPL_REPLAY) != 0) ? true : false,permissions_from,permissions_to);
@@ -1650,6 +1661,11 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
 /* MCHN END */    
         // Store transaction in memory
         pool.addUnchecked(hash, entry);
+        err=pEF->FED_EventChunksAvailable();
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot write offchain items from tx %s to feeds, error %d\n",hash.ToString().c_str(),err);
+        }        
     }
 
     if(((mc_gState->m_WalletMode & MC_WMD_ADDRESS_TXS) == 0) || (mc_gState->m_WalletMode & MC_WMD_MAP_TXS))
@@ -1785,7 +1801,7 @@ bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex)
     if (block.GetHash() != pindex->GetBlockHash())
         return error("ReadBlockFromDisk(CBlock&, CBlockIndex*) : GetHash() doesn't match index");
 /* MCHN START */    
-    VerifyBlockSignature(&block,true,false);
+    VerifyBlockSignature(&block,true);
 /* MCHN END */    
     return true;
 }
@@ -2787,8 +2803,28 @@ bool static DisconnectTip(CValidationState &state) {
     int64_t nStart = GetTimeMicros();
     {
         CCoinsViewCache view(pcoinsTip);
+        int err;
+        err=pEF->FED_EventBlock(block, state, pindexDelete,"remove",false,false);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot disconnect(before) block %s in feeds, error %d\n",pindexDelete->GetBlockHash().ToString().c_str(),err);
+        }        
+        
         if (!DisconnectBlock(block, state, pindexDelete, view))
+        {
+            err=pEF->FED_EventBlock(block, state, pindexDelete,"remove",true,true);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot disconnect(error) block %s in feeds, error %d\n",pindexDelete->GetBlockHash().ToString().c_str(),err);
+            }        
             return error("DisconnectTip() : DisconnectBlock %s failed", pindexDelete->GetBlockHash().ToString());
+        }
+        
+        err=pEF->FED_EventBlock(block, state, pindexDelete,"remove",true,false);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot disconnect(after) block %s in feeds, error %d\n",pindexDelete->GetBlockHash().ToString().c_str(),err);
+        }        
         assert(view.Flush());
     }
     if(fDebug)LogPrint("bench", "- Disconnect block: %.2fms\n", (GetTimeMicros() - nStart) * 0.001);
@@ -2829,7 +2865,9 @@ bool static DisconnectTip(CValidationState &state) {
         CValidationState stateDummy;
         if (tx.IsCoinBase() || !AcceptToMemoryPool(mempool, stateDummy, tx, false, NULL))
         {
-            mempool.remove(tx, removed, true, "resurrection");
+            LogPrintf("Tx not accepted in resurrection after block: %s\n",tx.GetHash().ToString().c_str());
+            string reason=(stateDummy.GetRejectReason().size() > 0) ? stateDummy.GetRejectReason() : "unknown";
+            mempool.remove(tx, removed, true, "resurrection: "+reason);
         }
     }
 /* MCHN START */    
@@ -2880,7 +2918,7 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
         if (!ReadBlockFromDisk(block, pindexNew))
             return state.Abort("Failed to read block");
         pblock = &block;
-    }
+    }        
     if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Connecting block %s (height %d), %d transactions in mempool\n",pindexNew->GetBlockHash().ToString().c_str(),pindexNew->nHeight,(int)mempool.size());
     // Apply the block atomically to the chain state.
     int64_t nTime2 = GetTimeMicros(); nTimeReadFromDisk += nTime2 - nTime1;
@@ -2890,20 +2928,50 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
     {
         pMultiChainFilterEngine->Reset(pindexNew->nHeight-1,1);
     }
+    if(pindexNew->nHeight == 0)
+    {
+        pindexNew->nSize=GenesisBlockSize;
+    }
     {
         CCoinsViewCache view(pcoinsTip);
         CInv inv(MSG_BLOCK, pindexNew->GetBlockHash());
-        bool rv = ConnectBlock(*pblock, state, pindexNew, view);
+        int err;
+        err=pEF->FED_EventBlock(*pblock, state, pindexNew,"check",false,false);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot connect(before) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        }        
+        bool rv = ConnectBlock(*pblock, state, pindexNew, view);        
+        if(rv)
+        {
+            if(!VerifyBlockSignatureType(pblock))
+            {
+                rv=state.DoS(100, error("ConnectBlock() : bad miner signature type"),
+                         REJECT_INVALID, "bad-miner-signature-type");                        
+            }
+        }
         g_signals.BlockChecked(*pblock, state);
+        
         if (!rv) {            
+            err=pEF->FED_EventBlock(*pblock, state, pindexNew,"check",true,true);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot connect(error) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+            }        
             if (state.IsInvalid())
                 InvalidBlockFound(pindexNew, state);
             return error("ConnectTip() : ConnectBlock %s failed", pindexNew->GetBlockHash().ToString());
         }
+        
         mapBlockSource.erase(inv.hash);
         nTime3 = GetTimeMicros(); nTimeConnectTotal += nTime3 - nTime2;
         if(fDebug)LogPrint("bench", "  - Connect total: %.2fms [%.2fs]\n", (nTime3 - nTime2) * 0.001, nTimeConnectTotal * 0.000001);
         assert(view.Flush());
+        err=pEF->FED_EventBlock(*pblock, state, pindexNew,"check",true,false);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot connect(before) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        }        
     }
     int64_t nTime4 = GetTimeMicros(); nTimeFlush += nTime4 - nTime3;
     if(fDebug)LogPrint("bench", "  - Flush: %.2fms [%.2fs]\n", (nTime4 - nTime3) * 0.001, nTimeFlush * 0.000001);
@@ -2915,6 +2983,34 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
     // Remove conflicting transactions from the mempool.
     list<CTransaction> txConflicted;
     if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Removing block txs from mempool\n");
+
+    int err=MC_ERR_NOERROR;
+    if(pindexNew->nHeight)
+    {
+        err=pEF->FED_EventBlock(*pblock, state, pindexNew,"add",false,false);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot add(before) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        }        
+        CDiskTxPos pos1(pindexNew->GetBlockPos(), 80+GetSizeOfCompactSize(pblock->vtx.size()));
+        for (unsigned int i = 0; i < pblock->vtx.size(); i++)
+        {
+            const CTransaction &tx = pblock->vtx[i];
+            err=pEF->FED_EventTx(tx,pindexNew->nHeight,&pos1,i,pindexNew->GetBlockHash(),pblock->nTime);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot write tx %s to feeds in block, error %d\n",tx.GetHash().ToString().c_str(),err);
+            }
+            pos1.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
+        }
+        err=pEF->FED_EventBlock(*pblock, state, pindexNew,"add",true,false);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot add(after) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        }        
+    }
+
+    if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Removing block txs from mempool\n");
     mempool.removeForBlock(pblock->vtx, pindexNew->nHeight, txConflicted);
     mempool.check(pcoinsTip);
 /* MCHN START */    
@@ -2924,7 +3020,7 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
 
     if(fDebug)LogPrint("wallet","wtxs: Committing block %d\n",pindexNew->nHeight);
     
-    int err=MC_ERR_NOERROR;
+    err=MC_ERR_NOERROR;
     if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Wallet, before commit           (%s)\n",(mc_gState->m_WalletMode & MC_WMD_TXS) ? pwalletTxsMain->Summary() : "");
     err=pwalletTxsMain->BeforeCommit(NULL);
     if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Wallet, before commit completed (%s)\n",(mc_gState->m_WalletMode & MC_WMD_TXS) ? pwalletTxsMain->Summary() : "");
@@ -2947,6 +3043,16 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
             pos.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
         }
     }
+    
+    if(pindexNew->nHeight)
+    {
+        err=pEF->FED_EventChunksAvailable();
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot write offchain items in block, error %d\n",err);
+        }
+    }
+    
     if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Wallet, commit                  (%s)\n",(mc_gState->m_WalletMode & MC_WMD_TXS) ? pwalletTxsMain->Summary() : "");
     if(err == MC_ERR_NOERROR)
     {
@@ -2980,7 +3086,7 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
     }
     // ... and about transactions that got confirmed:
 /* MCHN START */        
-    VerifyBlockSignature(pblock,false,true);
+    VerifyBlockSignature(pblock,false);
     MultichainNode_ApplyUpgrades(chainActive.Height());    
 /* MCHN END */    
     
@@ -3002,6 +3108,89 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
     if(fDebug)LogPrint("bench", "- Connect block: %.2fms [%.2fs]\n", (nTime6 - nTime1) * 0.001, nTimeTotal * 0.000001);
     return true;
 }
+
+bool RecoverAfterCrash()
+{
+    LOCK(cs_main);
+    
+    CBlock block;
+    CBlock *pblock;
+    CValidationState state;
+    CBlockIndex *pindexNew=chainActive.Tip();
+    int err;
+    
+    if(chainActive.Height() <= 0)
+    {
+        return true;
+    }
+    
+    if (!ReadBlockFromDisk(block, pindexNew))
+    {
+        LogPrintf("ERROR: Cannot load last block from disk\n");
+        return false;
+    }
+    pblock=&block;
+    
+    err=pEF->FED_EventBlock(*pblock, state, pindexNew,"check",true,true);
+    if(err)
+    {
+        LogPrintf("ERROR: Cannot connect(error) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        return false;
+    }        
+    
+    err=pEF->FED_EventBlock(*pblock, state, pindexNew,"check",true,false);
+    if(err)
+    {
+        LogPrintf("ERROR: Cannot connect(before) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        return false;
+    }        
+    
+    err=pEF->FED_EventBlock(*pblock, state, pindexNew,"add",false,false);
+    if(err)
+    {
+        LogPrintf("ERROR: Cannot add(before) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        return false;
+    }        
+    
+    CDiskTxPos pos1(pindexNew->GetBlockPos(), 80+GetSizeOfCompactSize(pblock->vtx.size()));
+    for (unsigned int i = 0; i < pblock->vtx.size(); i++)
+    {
+        const CTransaction &tx = pblock->vtx[i];
+        err=pEF->FED_EventTx(tx,pindexNew->nHeight,&pos1,i,pindexNew->GetBlockHash(),pblock->nTime);
+        if(err)
+        {
+            LogPrintf("ERROR: Cannot write tx %s to feeds in block, error %d\n",tx.GetHash().ToString().c_str(),err);
+            return false;
+        }
+        pos1.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
+    }
+    
+    err=pEF->FED_EventBlock(*pblock, state, pindexNew,"add",true,false);
+    if(err)
+    {
+        LogPrintf("ERROR: Cannot add(after) block %s in feeds, error %d\n",pindexNew->GetBlockHash().ToString().c_str(),err);
+        return false;
+    }        
+
+    for(int pos=0;pos<mempool.hashList->m_Count;pos++)
+    {
+        uint256 hash=*(uint256*)mempool.hashList->GetRow(pos);
+        if(mempool.exists(hash))
+        {
+            const CTxMemPoolEntry entry=mempool.mapTx[hash];
+            const CTransaction& tx = entry.GetTx();            
+            err=pEF->FED_EventTx(tx,-1,NULL,-1,0,0);            
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot write tx %s to feeds in mempool, error %d\n",tx.GetHash().ToString().c_str(),err);
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
 
 /**
  * Return the tip of the chain with the most work in it, that isn't
@@ -3038,6 +3227,7 @@ static CBlockIndex* FindMostWorkChain() {
                     if(work == max_work)
                     {
                         max_count++;
+                        VerifyBlockMiner(NULL,pindex);                          // Optimization in case of very long forks - start from the end
                     }                            
                 }
                 if(max_count>1)
@@ -3112,7 +3302,7 @@ static CBlockIndex* FindMostWorkChain() {
                         setDirtyBlockIndex.insert(pindexCandidate);
                     }
                 }
-        
+
                 
 //                if(!fLocked)
                 if(pindexCandidate->fPassedMinerPrecheck)
@@ -3254,7 +3444,6 @@ static bool ActivateBestChainStep(CValidationState &state, CBlockIndex *pindexMo
     const CBlockIndex *pindexFork = chainActive.FindFork(pindexMostWork);
 
     if(fDebug)LogPrint("mcblockperf","mchn-block-perf: Best chain activation\n");
-    
     // Disconnect active blocks which are no longer in the best chain.
     while (chainActive.Tip() && chainActive.Tip() != pindexFork) {
         if (!DisconnectTip(state))
@@ -3730,6 +3919,7 @@ string SetLockedBlock(string hash)
         else
         {
             LogPrintf("Block %s not found, chain will be switched if it will appear on alternative chain\n",hLockedBlock.ToString().c_str());     
+            LOCK(cs_vNodes);
             BOOST_FOREACH(CNode* pnode, vNodes)
             {
                 pnode->PushMessage("getheaders", chainActive.GetLocator(chainActive.Tip()), uint256(0));                
@@ -4127,9 +4317,11 @@ bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool f
 //    if (block.GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
     if (block.GetBlockTime() > GetAdjustedTime() + 2 * 6 * Params().TargetSpacing())
 /* MCHN END */    
+    {
+        LogPrintf("ERROR: Block time: %u. Node time: %u, Offset: %u\n",block.GetBlockTime(), GetAdjustedTime(), GetTimeOffset());
         return state.Invalid(error("CheckBlockHeader() : block timestamp too far in the future"),
                              REJECT_INVALID, "time-too-new");
-
+    }
     return true;
 }
 
@@ -4552,7 +4744,7 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
 /* MCHN START*/    
     pindex->dTimeReceived=mc_TimeNowAsDouble();
             
-    if(!VerifyBlockSignature(&block,false,true))
+    if(!VerifyBlockSignature(&block,false))
     {
         return false;
     }    
@@ -4560,6 +4752,7 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
     if(block.vSigner[0])
     {
         pindex->kMiner.Set(block.vSigner+1, block.vSigner+1+block.vSigner[0]);
+        pindex->nStatus |= BLOCK_HAVE_MINER_PUBKEY;
     }
             
 /* MCHN END*/    
@@ -4615,6 +4808,9 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
     // Write block to history file
     try {
         unsigned int nBlockSize = ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION);
+        pindex->nSize=nBlockSize;
+        pindex->nStatus |= BLOCK_HAVE_SIZE;
+
         CDiskBlockPos blockPos;
         if (dbp != NULL)
             blockPos = *dbp;
@@ -4700,7 +4896,7 @@ bool ProcessNewBlock(CValidationState &state, CNode* pfrom, CBlock* pblock, CDis
 /* MCHN START*/    
     {
         LOCK(cs_main);
-        if(!VerifyBlockSignature(pblock,true,true))
+        if(!VerifyBlockSignature(pblock,true))
         {
             return false;
         }
@@ -4777,12 +4973,19 @@ bool ProcessNewBlock(CValidationState &state, CNode* pfrom, CBlock* pblock, CDis
         }
     }
  */ 
-    
     if(activate)
     {
-        
+        {
+            LOCK(cs_main);
+            pEF->LIC_VerifyLicenses(-1);
+        }
         if (!ActivateBestChain(state, pblock))
-            return error("%s : ActivateBestChain failed", __func__);
+            return error("%s : ActivateBestChain failed", __func__);    
+        {
+            LOCK(cs_main);
+            pEF->LIC_VerifyLicenses(chainActive.Height());
+            pEF->NET_CheckConnections();
+        }
     }
 /* MCHN START */    
 /*
@@ -4927,7 +5130,7 @@ CBlockIndex * InsertBlockIndex(uint256 hash)
     return pindexNew;
 }
 
-bool static LoadBlockIndexDB()
+bool static LoadBlockIndexDB(std::string& strError)
 {
     if (!pblocktree->LoadBlockIndexGuts())
         return false;
@@ -5086,13 +5289,29 @@ bool static LoadBlockIndexDB()
         
     
     if(fDebug)LogPrint("mchn","mchn: Rolling back permission DB to height %d\n",chainActive.Height());
-    mc_gState->m_Permissions->RollBack(chainActive.Height());
+    if(mc_gState->m_Permissions->RollBack(chainActive.Height()) != MC_ERR_NOERROR)
+    {
+        LogPrintf("ERROR: Couldn't roll back permission DB to height %d\n",chainActive.Height());                                    
+        return false;        
+    }
     if(fDebug)LogPrint("mchn","mchn: Rolling back asset DB to height %d\n",chainActive.Height());
-    mc_gState->m_Assets->RollBack(chainActive.Height());
+    if(mc_gState->m_Assets->RollBack(chainActive.Height()) != MC_ERR_NOERROR)
+    {
+        LogPrintf("ERROR: Couldn't roll back asset DB to height %d\n",chainActive.Height());                                    
+        return false;        
+    }
     if(mc_gState->m_WalletMode & MC_WMD_TXS)
     {
         if(fDebug)LogPrint("mchn","mchn: Rolling back wallet txs DB to height %d\n",chainActive.Height());
-        pwalletTxsMain->RollBack(NULL,chainActive.Height());
+        if(pwalletTxsMain->RollBack(NULL,chainActive.Height()) != MC_ERR_NOERROR)
+        {
+            LogPrintf("ERROR: Couldn't roll back wallet txs DB to height %d\n",chainActive.Height());                                    
+            if(!GetBoolArg("-skipwalletchecks",false) && !GetBoolArg("-rescan", false))
+            {
+                strError="Error: The wallet database is inconsistent. Restart MultiChain with -rescan to rebuild the wallet database from the blockchain (can take hours), or with -skipwalletchecks to continue operating anyway";
+                return false;
+            }
+        }
     }
     MultichainNode_ApplyUpgrades(chainActive.Height());        
     
@@ -5163,8 +5382,26 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
         // check level 3: check for inconsistencies during memory-only disconnect of tip blocks
         if (nCheckLevel >= 3 && pindex == pindexState && (coins.GetCacheSize() + pcoinsTip->GetCacheSize()) <= nCoinCacheSize) {
             bool fClean = true;
+            int err;
+            err=pEF->FED_EventBlock(block, state, pindex,"remove",false,false);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot disconnect(before) block %s in feeds, error %d\n",pindex->GetBlockHash().ToString().c_str(),err);
+            }        
             if (!DisconnectBlock(block, state, pindex, coins, &fClean))
+            {
+                err=pEF->FED_EventBlock(block, state, pindex,"remove",false,true);
+                if(err)
+                {
+                    LogPrintf("ERROR: Cannot disconnect(error) block %s in feeds, error %d\n",pindex->GetBlockHash().ToString().c_str(),err);
+                }        
                 return error("VerifyDB() : *** irrecoverable inconsistency in block data at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
+            }
+            err=pEF->FED_EventBlock(block, state, pindex,"remove",false,false);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot disconnect(after) block %s in feeds, error %d\n",pindex->GetBlockHash().ToString().c_str(),err);
+            }        
             pindexState = pindex->pprev;
             if (!fClean) {
                 nGoodTransactions = 0;
@@ -5188,8 +5425,30 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
             CBlock block;
             if (!ReadBlockFromDisk(block, pindex))
                 return error("VerifyDB() : *** ReadBlockFromDisk failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
+            if(pindex->nHeight == 0)
+            {
+                pindex->nSize=GenesisBlockSize;
+            }
+            int err;
+            err=pEF->FED_EventBlock(block, state, pindex,"check",false,false);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot connect(before) block %s in feeds, error %d\n",pindex->GetBlockHash().ToString().c_str(),err);
+            }        
             if (!ConnectBlock(block, state, pindex, coins))
+            {
+                err=pEF->FED_EventBlock(block, state, pindex,"check",true,true);
+                if(err)
+                {
+                    LogPrintf("ERROR: Cannot connect(before) block %s in feeds, error %d\n",pindex->GetBlockHash().ToString().c_str(),err);
+                }        
                 return error("VerifyDB() : *** found unconnectable block at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
+            }
+            err=pEF->FED_EventBlock(block, state, pindex,"check",true,false);
+            if(err)
+            {
+                LogPrintf("ERROR: Cannot connect(before) block %s in feeds, error %d\n",pindex->GetBlockHash().ToString().c_str(),err);
+            }        
         }
     }
 
@@ -5206,10 +5465,10 @@ void UnloadBlockIndex()
     pindexBestInvalid = NULL;
 }
 
-bool LoadBlockIndex()
+bool LoadBlockIndex(std::string& strError)
 {
     // Load block index from databases
-    if (!fReindex && !LoadBlockIndexDB())
+    if (!fReindex && !LoadBlockIndexDB(strError))
         return false;
     return true;
 }
@@ -5252,7 +5511,7 @@ bool InitBlockIndex() {
             return error("LoadBlockIndex() : failed to initialize block database: %s", e.what());
         }
     }
-
+    
     return true;
 }
 
@@ -5715,6 +5974,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         else
             pfrom->fRelayTxes = true;
 
+        pfrom->nMultiChainServices=0;
+        if (!vRecv.empty())
+        {
+            vRecv >> pfrom->nMultiChainServices;
+        }
+        
         // Disconnect if we connected to ourself
         if (nNonce == nLocalHostNonce && nNonce > 1)
         {            
@@ -5860,7 +6125,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         {
             if( (mc_gState->m_NodePausedState & MC_NPS_OFFCHAIN) == 0 )
             {
-                if(!pRelayManager->ProcessRelay(pfrom,vRecv,state,MC_VRA_DEFAULT))
+                bool msg_success=pRelayManager->ProcessRelay(pfrom,vRecv,state,MC_VRA_DEFAULT);
+                if(!msg_success)
                 {
                     int nDos = 0;
                     if (state.IsInvalid(nDos) && nDos > 0)
@@ -5868,6 +6134,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                         Misbehaving(pfrom->GetId(), nDos);
                     }
                 }
+                pwalletTxsMain->m_ChunkCollector->AdjustKBPerDestination(pfrom,msg_success);
             }
         }
     }
@@ -6314,6 +6581,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     }
                 }
             }
+            
+        
+            pEF->LIC_VerifyLicenses(-1);            
 /* MCHN END */            
             
             
@@ -6489,6 +6759,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 LOCK(cs_main);
                 if(seed_could_connect && !mc_gState->m_Permissions->CanConnect(NULL,seed_node->kAddrRemote.begin()))
                 {
+                    LOCK(cs_vNodes);
                     if(vNodes.size() > 1)
                     {
                         LogPrintf("mchn: Seed node lost connect permission on block %d\n",mc_gState->m_Permissions->m_Block);
@@ -7019,6 +7290,10 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
         if (pto->nVersion == 0)
             return true;
 
+        if(!pEF->NET_IsFinalized(pto))
+        {
+            return true;            
+        }
         //
         // Message: ping
         //
@@ -7333,6 +7608,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                         LogPrintf("mchn: Synced with seed node on block %d\n",mc_gState->m_Permissions->m_Block);
                         mc_RemoveFile(mc_gState->m_NetworkParams->Name(),"seed",".dat",MC_FOM_RELATIVE_TO_DATADIR);
                         mc_gState->m_pSeedNode=NULL;                    
+                        LOCK(cs_vNodes);
                         if(vNodes.size() > 1)
                         {
                             LogPrintf("mchn: Disconnecting seed node\n");

@@ -14,8 +14,8 @@ int mc_State::VersionInfo(int version)
         return custom_version;
     }
     
-    int this_build=20002901;
-    int this_protocol=20010;   
+    int this_build=20007901;
+    int this_protocol=20011;   
     
     if(mc_gState->m_EnterpriseBuild)
     {
@@ -47,7 +47,7 @@ int mc_State::VersionInfo(int version)
     }
     if(version < 10002)return 10002;                                            // first version
     if(version < 10008)return -10000201;                                        // last build supporting this version (negative)
-    if(version < 10012)return -this_build;                                      // supported by this version    
+    if(version < 10013)return -this_build;                                      // supported by this version    
     if(version < 20001)return 20001;                                            // next version
     if(version < this_protocol+1)return -this_build;                            // supported by this version    
         
@@ -85,7 +85,6 @@ int mc_State::IsDeprecated(int version)
             is_protocol_multichain=0;
         }
     }
-    
     if(is_protocol_multichain)
     {
         if(build > 0)

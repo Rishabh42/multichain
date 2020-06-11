@@ -50,6 +50,7 @@ static const CRPCCommand vRPCCommands[] =
   //  --------------------- ------------------------  -----------------------  ---------- ---------- ---------
     /* Overall control/query calls */
     { "control",            "getinfo",                &getinfo,                true,      false,      false }, /* uses wallet if enabled */
+    { "control",            "getinitstatus",          &getinitstatus,          true,      true,       false },
     { "control",            "help",                   &help,                   true,      true,       false },
     { "control",            "stop",                   &stop,                   true,      true,       false },
 /* MCHN START */    
@@ -106,6 +107,13 @@ static const CRPCCommand vRPCCommands[] =
     { "blockchain",         "getassetinfo",           &getassetinfo,           true,      false,      false },
     { "blockchain",         "getstreaminfo",          &getstreaminfo,          true,      false,      false },
     { "blockchain",         "verifypermission",       &verifypermission,       true,      false,      false },
+
+    { "blockchain",         "listvariables",          &listvariables,          true,      false,      false },
+    { "blockchain",         "getvariableinfo",        &getvariableinfo,        true,      false,      false },
+    { "blockchain",         "setvariablevalue",       &setvariablevalue,       true,      false,      false },
+    { "blockchain",         "setvariablevaluefrom",   &setvariablevaluefrom,   true,      false,      false },
+    { "blockchain",         "getvariablevalue",       &getvariablevalue,       true,      false,      false },
+    { "blockchain",         "getvariablehistory",     &getvariablehistory,     true,      false,      false },
 /* MCHN END */    
     
     /* Mining */
@@ -156,6 +164,7 @@ static const CRPCCommand vRPCCommands[] =
     { "hidden",             "data-all",               &purehelpitem_nomethod,           true,      true,       true },
     { "hidden",             "data-with",              &purehelpitem_nomethod,           true,      true,       true },
     { "hidden",             "addresses-all",          &purehelpitem_nomethod,           true,      true,       true },
+    { "hidden",             "feed-options",           &purehelpitem_nomethod,         true,      true,       true },
     
     { "hidden",             "getfilterstreamitem",    &purehelpitem_onlyfilter,      true,      false,      false },
     { "hidden",             "getfiltertransaction",   &purehelpitem_onlyfilter,      true,      false,      false },
@@ -169,13 +178,26 @@ static const CRPCCommand vRPCCommands[] =
     /* Licensing */
     { "hidden",             "getlicenserequest",      &getlicenserequest,       true,      false,      true },
     { "hidden",             "decodelicenserequest",   &decodelicenserequest,    true,      false,      true },
+    { "hidden",             "decodelicenseconfirmation",   &decodelicenseconfirmation,    true,      false,      true },
     { "hidden",             "activatelicense",        &activatelicense,         true,      false,      true },
     { "hidden",             "activatelicensefrom",    &activatelicensefrom,     true,      false,      true },
     { "hidden",             "transferlicense",        &transferlicense,         true,      false,      true },
+    { "hidden",             "takelicense",            &takelicense,             true,      false,      true },
     { "hidden",             "listlicenses",           &listlicenses,            true,      false,      true },
     { "hidden",             "getlicenseconfirmation", &getlicenseconfirmation,  true,      false,      true },
+    { "hidden",             "importlicenserequest",   &importlicenserequest,       true,      false,      true },
     
-    
+    { "feeds",              "createfeed",             &createfeed,              true,      false,      false },
+    { "feeds",              "deletefeed",             &deletefeed,              true,      true,       false },
+    { "feeds",              "pausefeed",              &pausefeed,               true,      false,      false },
+    { "feeds",              "resumefeed",             &resumefeed,              true,      false,      false },
+    { "feeds",              "addtofeed",              &addtofeed,               true,      false,      false },
+    { "feeds",              "updatefeed",             &updatefeed,              true,      false,      false },
+    { "feeds",              "purgefeed",              &purgefeed,               true,      true,       false },
+    { "feeds",              "listfeeds",              &listfeeds,               true,      false,      false },
+    { "feeds",              "getdatarefdata",         &getdatarefdata,          true,      false,      false },
+    { "feeds",              "datareftobinarycache",   &datareftobinarycache,    true,      false,      false },
+
     /* Wallet */
     { "wallet",             "addmultisigaddress",     &addmultisigaddress,     true,      false,      true },
     { "wallet",             "backupwallet",           &backupwallet,           true,      false,      true },

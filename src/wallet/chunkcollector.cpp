@@ -5,6 +5,8 @@
 #include "wallet/chunkcollector.h"
 
 #define MC_IMPOSSIBLE_NEXT_ATTEMPT 0xFFFFFFFF
+#define MC_CCW_KBS_PER_SECOND_DELAY_UP         60000
+#define MC_CCW_KBS_PER_SECOND_DELAY_DOWN       15000
 
 void mc_ChunkEntityKey::Zero()
 {
@@ -50,6 +52,7 @@ void mc_ChunkCollector::Zero()
     m_DBName[0]=0;
     m_NextAutoCommitTimestamp=0;
     m_NextTryTimestamp=0;
+    m_LastKBPerDestinationChangeTimestamp=0;
     m_MarkPool=NULL;
     m_MemPool=NULL;
     m_MemPoolNext=NULL;
@@ -63,6 +66,25 @@ void mc_ChunkCollector::Zero()
     {
         m_TimeoutRequest=MC_CCW_TIMEOUT_REQUEST_SHIFT+1;
     }
+    int kb_per_sec=(int)GetArg("-chunkmaxkbpersecond",MC_CCW_MAX_KBS_PER_SECOND);
+    
+    m_MaxMBPerSecond=1;
+    if(kb_per_sec > 1024)
+    {
+        m_MaxMBPerSecond=(kb_per_sec-1)/1024+1;
+    }
+    if(m_MaxMBPerSecond <= 1)
+    {
+        m_MaxMBPerSecond=1;
+    }
+    if(m_MaxMBPerSecond > MC_CCW_MAX_KBS_PER_SECOND*1024)
+    {
+        m_MaxMBPerSecond=MC_CCW_MAX_KBS_PER_SECOND*1024;
+    }
+    m_MaxMaxKBPerDestination=(m_TimeoutRequest-MC_CCW_TIMEOUT_REQUEST_SHIFT)*kb_per_sec;
+    m_MinMaxKBPerDestination=(m_TimeoutRequest-MC_CCW_TIMEOUT_REQUEST_SHIFT)*MC_CCW_MIN_KBS_PER_SECOND;
+    m_MaxKBPerDestination=m_MaxMaxKBPerDestination;
+    
     m_TimeoutQuery=(int)GetArg("-chunkquerytimeout",MC_CCW_TIMEOUT_QUERY);
     m_TotalChunkCount=0;
     m_TotalChunkSize=0;
@@ -128,6 +150,67 @@ int mc_ChunkCollector::Lock(int write_mode,int allow_secondary)
     return 0;
 }
 
+void mc_ChunkCollector::AdjustKBPerDestination(CNode *pfrom,bool success)
+{
+    int64_t time_now=GetTimeMillis();
+    if(pfrom->nMaxKBPerDestination == 0)
+    {
+        pfrom->nMaxKBPerDestination=m_MaxKBPerDestination;
+    }
+    
+    if(success)
+    {
+        if(pfrom->nMaxKBPerDestination >= m_MaxMaxKBPerDestination)
+        {
+            return;
+        }
+        if( (time_now - pfrom->nLastKBPerDestinationChangeTimestamp) < MC_CCW_KBS_PER_SECOND_DELAY_UP )
+        {
+            return;
+        }
+        pfrom->nMaxKBPerDestination *= 2;
+        if(pfrom->nMaxKBPerDestination >= m_MaxMaxKBPerDestination)
+        {
+            pfrom->nMaxKBPerDestination = m_MaxMaxKBPerDestination;
+        }
+    }
+    else
+    {
+        if(pfrom->nMaxKBPerDestination <= m_MinMaxKBPerDestination)
+        {
+            return;
+        }
+        if( (time_now - pfrom->nLastKBPerDestinationChangeTimestamp) < MC_CCW_KBS_PER_SECOND_DELAY_DOWN )
+        {
+            return;
+        }
+        pfrom->nMaxKBPerDestination /= 2;
+        if(pfrom->nMaxKBPerDestination <= m_MinMaxKBPerDestination)
+        {
+            pfrom->nMaxKBPerDestination = m_MinMaxKBPerDestination;
+        }        
+    }
+    pfrom->nLastKBPerDestinationChangeTimestamp=time_now;        
+    int max_kb_per_destination=0;
+    LogPrintf("Adjusted offchain processing rate for peer %d on %s to %dMB\n",pfrom->id,(success ? "success" : "failure"),pfrom->nMaxKBPerDestination/1024);
+    {
+        LOCK(cs_vNodes);
+        BOOST_FOREACH(CNode* pnode, vNodes)
+        {
+            if(pnode->nMaxKBPerDestination > max_kb_per_destination)
+            {
+                max_kb_per_destination=pnode->nMaxKBPerDestination;
+            }
+        }        
+    }
+    if(max_kb_per_destination != m_MaxKBPerDestination)
+    {
+        m_MaxKBPerDestination=max_kb_per_destination;
+        LogPrintf("Adjusted global offchain processing rate on %s to %dMB\n",(success ? "success" : "failure"),m_MaxKBPerDestination/1024);        
+    }
+}
+
+
 void mc_ChunkCollector::UnLock()
 {    
     m_LockedBy=0;
@@ -153,6 +236,7 @@ void mc_ChunkCollector::SetDBRow(mc_ChunkCollectorRow* collect_row)
     m_DBRow.m_Status=collect_row->m_State.m_Status;
     memcpy(m_DBRow.m_Salt,collect_row->m_Salt,MAX_CHUNK_SALT_SIZE);
     m_DBRow.m_SaltSize=collect_row->m_SaltSize;
+    m_DBRow.m_CollectorFlags=collect_row->m_Flags;
 }
 
 void mc_ChunkCollector::GetDBRow(mc_ChunkCollectorRow* collect_row)
@@ -171,6 +255,7 @@ void mc_ChunkCollector::GetDBRow(mc_ChunkCollectorRow* collect_row)
     collect_row->m_State.m_Status |= MC_CCF_INSERTED;                
     memcpy(collect_row->m_Salt,m_DBRow.m_Salt,MAX_CHUNK_SALT_SIZE);
     collect_row->m_SaltSize=m_DBRow.m_SaltSize;
+    collect_row->m_Flags=m_DBRow.m_CollectorFlags;
 }
 
 int mc_ChunkCollector::DeleteDBRow(mc_ChunkCollectorRow *collect_row)
@@ -551,12 +636,13 @@ int mc_ChunkCollector::InsertChunk(                                             
                  const unsigned char *txid,
                  const int vout,
                  const uint32_t chunk_size,
-                 const uint32_t salt_size)
+                 const uint32_t salt_size,
+                 const uint32_t flags)
 {
     int err;
     
     Lock();
-    err=InsertChunkInternal(hash,entity,txid,vout,chunk_size,salt_size);
+    err=InsertChunkInternal(hash,entity,txid,vout,chunk_size,salt_size,flags);
     UnLock();
     
     return err;    
@@ -695,7 +781,8 @@ int mc_ChunkCollector::InsertChunkInternal(
                  const unsigned char *txid,
                  const int vout,
                  const uint32_t chunk_size,
-                 const uint32_t salt_size)
+                 const uint32_t salt_size,
+                 const uint32_t flags)
 {
     mc_ChunkCollectorRow collect_row;
     int mprow;
@@ -707,6 +794,7 @@ int mc_ChunkCollector::InsertChunkInternal(
     collect_row.m_Vout=vout;
     collect_row.m_ChunkDef.m_Size=chunk_size;
     collect_row.m_State.m_Status=MC_CCF_NEW;
+    collect_row.m_Flags=flags;
     collect_row.m_SaltSize=salt_size;
     memset(collect_row.m_Salt,0,MAX_CHUNK_SALT_SIZE);
     

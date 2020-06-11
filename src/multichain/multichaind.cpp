@@ -22,6 +22,7 @@
 static bool fDaemon;
 
 mc_EnterpriseFeatures* pEF = NULL;
+extern uint64_t nMainThreadID;
 
 void DebugPrintClose();
 
@@ -91,7 +92,11 @@ bool AppInit(int argc, char* argv[])
     //
     // If Qt is used, parameters/bitcoin.conf are parsed in qt/bitcoin.cpp's main()
 
-        
+#ifndef WIN32
+    umask(077);        
+#endif
+    nMainThreadID=0;   
+    
     mc_gState=new mc_State;
     
     mc_gState->m_Params->Parse(argc, argv, MC_ETP_DAEMON);
@@ -172,6 +177,7 @@ bool AppInit(int argc, char* argv[])
     if(!GetBoolArg("-shortoutput", false))
     {
         fprintf(stdout,"\nMultiChain %s Daemon (%slatest protocol %d)\n\n",mc_BuildDescription(mc_gState->GetNumericVersion()).c_str(),edition.c_str(),mc_gState->GetProtocolVersion());
+        fprintf(stdout,"%s",pEF->ENT_TextConstant("demo-startup-message").c_str());
     }
     
     pipes[1]=STDOUT_FILENO;
@@ -240,6 +246,7 @@ bool AppInit(int argc, char* argv[])
             mc_CheckDataDirInConfFile();
             
             pEF=new mc_EnterpriseFeatures;
+            mc_gState->m_EnterpriseBuild=pEF->ENT_BuildVersion();
         }
 #endif
         
@@ -411,6 +418,7 @@ bool AppInit(int argc, char* argv[])
 */
         SoftSetBoolArg("-server", true);
         detectShutdownThread = new boost::thread(boost::bind(&DetectShutdownThread, &threadGroup));
+        nMainThreadID=__US_ThreadID();
         fRet = AppInit2(threadGroup,pipes[1]);
         if(is_daemon)
         {
